@@ -86,7 +86,8 @@ object Schema {
             sale_text       text,
             valid_from      timestamptz NOT NULL,
             valid_to        timestamptz NOT NULL,
-            confidence      text NOT NULL,
+            price_confidence text NOT NULL,
+            match_confidence text NOT NULL,
             raw_response_id bigint NOT NULL REFERENCES raw_response(id),
             UNIQUE (product_key, flyer_id, observed_at)
           )""",
@@ -134,6 +135,38 @@ object Schema {
             ON price_observation (valid_from, valid_to)""",
   )
 
+  /** In-place migrations for databases created before a shape change. Kept
+    * separate from `ddl` because CREATE TABLE IF NOT EXISTS silently does
+    * nothing to an existing table — which is exactly how a schema change turns
+    * into a runtime column-not-found at 3am.
+    */
+  val migrations: List[Fragment] = List(
+    // Confidence was one column collapsing two unrelated judgements.
+    //
+    // Guarded on the old column still existing, because migrations run on EVERY
+    // boot: an unguarded backfill referencing `confidence` succeeds once and then
+    // fails forever after the DROP, which means the service starts once and never
+    // again. Existing rows only ever stored the minimum of the two judgements, so
+    // both are backfilled from it — conservative, and honest that the components
+    // are not recoverable.
+    sql"""DO $$$$
+          BEGIN
+            IF EXISTS (
+              SELECT 1 FROM information_schema.columns
+              WHERE table_name = 'price_observation' AND column_name = 'confidence'
+            ) THEN
+              ALTER TABLE price_observation ADD COLUMN IF NOT EXISTS price_confidence text;
+              ALTER TABLE price_observation ADD COLUMN IF NOT EXISTS match_confidence text;
+              UPDATE price_observation
+                 SET price_confidence = COALESCE(price_confidence, confidence),
+                     match_confidence = COALESCE(match_confidence, confidence);
+              ALTER TABLE price_observation DROP COLUMN confidence;
+              ALTER TABLE price_observation ALTER COLUMN price_confidence SET NOT NULL;
+              ALTER TABLE price_observation ALTER COLUMN match_confidence SET NOT NULL;
+            END IF;
+          END $$$$;"""
+  )
+
   def migrate[F[_]: MonadCancelThrow](xa: Transactor[F]): F[Unit] =
-    ddl.traverse_(_.update.run).transact(xa)
+    (ddl ++ migrations).traverse_(_.update.run).transact(xa)
 }

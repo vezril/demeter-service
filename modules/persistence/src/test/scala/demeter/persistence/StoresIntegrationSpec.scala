@@ -70,8 +70,34 @@ final class StoresIntegrationSpec extends AnyFunSuite {
       saleText = if (cents.isEmpty) Some("50% off") else None,
       validFrom = validFrom,
       validTo = validTo,
-      confidence = Confidence.High,
+      priceConfidence = Confidence.High,
+      matchConfidence = Confidence.High,
     )
+
+  pgTest("migrate is idempotent — it runs on every boot, not just the first") {
+    // an unguarded backfill referencing a column it later drops succeeds once
+    // and fails forever after, so the service starts once and never again
+    Schema.migrate(PgTest.xa).unsafeRunSync()
+    Schema.migrate(PgTest.xa).unsafeRunSync()
+    Schema.migrate(PgTest.xa).unsafeRunSync()
+
+    val cols = sql"""SELECT column_name FROM information_schema.columns
+                     WHERE table_name = 'price_observation'
+                       AND column_name IN ('confidence','price_confidence','match_confidence')"""
+      .query[String].to[List].transact(PgTest.xa).unsafeRunSync().sorted
+    assert(cols == List("match_confidence", "price_confidence"), s"unexpected columns: $cols")
+  }
+
+  pgTest("both confidences survive the round trip independently") {
+    val rawId = putRaw()
+    val mixed = obs().copy(priceConfidence = Confidence.High, matchConfidence = Confidence.Low)
+    obsStore.save(mixed, rawId).unsafeRunSync()
+
+    val List(back) = obsStore.observationsFor(mixed.productKey, now.minusSeconds(60)).unsafeRunSync()
+    assert(back.priceConfidence == Confidence.High, "a clean price stays trusted")
+    assert(back.matchConfidence == Confidence.Low, "even when identity is not")
+    assert(back.confidence == Confidence.Low, "and the derived combined view is the minimum")
+  }
 
   // --- 03.2 raw response store ---
 

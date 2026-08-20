@@ -31,7 +31,8 @@ final class MatcherSpec extends AnyFunSuite {
       saleText = None,
       validFrom = from,
       validTo = to,
-      confidence = Confidence.High,
+      priceConfidence = Confidence.High,
+      matchConfidence = Confidence.High,
     )
 
   private def watch(terms: List[String], merchants: Set[MerchantId] = Set.empty, active: Boolean = true) =

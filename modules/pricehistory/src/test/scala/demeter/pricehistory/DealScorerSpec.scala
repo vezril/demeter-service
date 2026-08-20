@@ -28,7 +28,8 @@ final class DealScorerSpec extends AnyFunSuite {
       saleText = None,
       validFrom = now,
       validTo = now.plus(Duration.ofDays(7)),
-      confidence = Confidence.High,
+      priceConfidence = Confidence.High,
+      matchConfidence = Confidence.High,
     )
 
   private def stats(median: Option[Long], min: Option[Long], pricedN: Int): PriceStats =

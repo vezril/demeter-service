@@ -37,7 +37,8 @@ final class RollingStatsSpec extends AnyFunSuite with ScalaCheckPropertyChecks {
         saleText = None,
         validFrom = at,
         validTo = at.plus(Duration.ofDays(7)),
-        confidence = confidence,
+        priceConfidence = confidence,
+        matchConfidence = confidence,
       ),
       provenance,
     )
@@ -80,6 +81,21 @@ final class RollingStatsSpec extends AnyFunSuite with ScalaCheckPropertyChecks {
 
     val empty = RollingStats.rollingStats(key, Nil, wideWindow, now)
     assert(empty.n == 0 && empty.weightedMedian.isEmpty)
+  }
+
+  test("history weighting ignores match confidence entirely") {
+    // the reason the field was split: an unclassifiable product name must not
+    // discount a clean scalar price in the median that decides alerts
+    val clean   = point(Some(100L))
+    val unnamed = HistoryPoint(clean.observation.copy(matchConfidence = Confidence.Low))
+    assert(RollingStats.weightOf(unnamed) == RollingStats.weightOf(clean))
+    assert(RollingStats.weightOf(unnamed) == 1.0)
+  }
+
+  test("history weighting still follows price confidence") {
+    val trusted = point(Some(100L))
+    val shaky   = HistoryPoint(trusted.observation.copy(priceConfidence = Confidence.Low))
+    assert(RollingStats.weightOf(shaky) < RollingStats.weightOf(trusted))
   }
 
   test("weights are pinned: scalar/High counts full, parsed/Low counts least") {

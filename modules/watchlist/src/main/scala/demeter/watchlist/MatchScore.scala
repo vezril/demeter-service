@@ -69,7 +69,9 @@ object MatchScore {
   ): List[Match] = {
     val ranks = rankByPrice(matched.map(_._1.effectivePrice))
     matched.zip(ranks).map { case ((obs, tm), rank) =>
-      Match(watch, obs, MatchScore(tm.textScore, obs.confidence, rank, weights))
+      // matchConfidence: ranking one match above another is a question about how
+      // well each item was IDENTIFIED, not about price derivation
+      Match(watch, obs, MatchScore(tm.textScore, obs.matchConfidence, rank, weights))
     }
   }
 }

@@ -72,14 +72,15 @@ final class DoobieObservationStore[F[_]: MonadCancelThrow](xa: Transactor[F]) ex
       sql"""INSERT INTO price_observation
               (product_key, merchant_id, flyer_id, observed_at, raw_name, display_name_en, display_name_fr,
                effective_cents, price_basis, original_cents, size_qty, size_unit, pack_count,
-               unit_cents, unit_basis, sale_text, valid_from, valid_to, confidence, raw_response_id)
+               unit_cents, unit_basis, sale_text, valid_from, valid_to,
+               price_confidence, match_confidence, raw_response_id)
             VALUES
               (${obs.productKey.value}, ${obs.merchantId.value}, ${obs.flyerId.value}, ${obs.observedAt},
                ${obs.rawName}, ${obs.name.en}, ${obs.name.fr},
                ${obs.effectivePrice.map(_.cents)}, ${obs.priceBasis}, ${obs.originalPrice.map(_.cents)},
                ${obs.size.map(_.quantity)}, ${obs.size.map(_.unit)}, ${obs.size.map(_.packCount)},
                ${obs.unitPrice.map(_.price.cents)}, ${obs.unitPrice.map(_.per)}, ${obs.saleText},
-               ${obs.validFrom}, ${obs.validTo}, ${obs.confidence}, ${rawId.value})
+               ${obs.validFrom}, ${obs.validTo}, ${obs.priceConfidence}, ${obs.matchConfidence}, ${rawId.value})
             ON CONFLICT (product_key, flyer_id, observed_at) DO NOTHING""".update.run
         .map(n => if (n > 0) SaveOutcome.Inserted else SaveOutcome.SkippedDuplicate)
 
@@ -117,7 +118,8 @@ final class DoobieObservationStore[F[_]: MonadCancelThrow](xa: Transactor[F]) ex
   private val selectFragment =
     sql"""SELECT product_key, merchant_id, flyer_id, observed_at, raw_name, display_name_en, display_name_fr,
                  effective_cents, price_basis, original_cents, size_qty, size_unit, pack_count,
-                 unit_cents, unit_basis, sale_text, valid_from, valid_to, confidence, id
+                 unit_cents, unit_basis, sale_text, valid_from, valid_to,
+                 price_confidence, match_confidence, id
           FROM price_observation"""
 
   private final case class ObsRow(
@@ -139,7 +141,8 @@ final class DoobieObservationStore[F[_]: MonadCancelThrow](xa: Transactor[F]) ex
       saleText: Option[String],
       validFrom: Instant,
       validTo: Instant,
-      confidence: Confidence,
+      priceConfidence: Confidence,
+      matchConfidence: Confidence,
       id: Long,
   ) {
     def toDomain: PriceObservation =
@@ -158,7 +161,8 @@ final class DoobieObservationStore[F[_]: MonadCancelThrow](xa: Transactor[F]) ex
         saleText = saleText,
         validFrom = validFrom,
         validTo = validTo,
-        confidence = confidence,
+        priceConfidence = priceConfidence,
+        matchConfidence = matchConfidence,
       )
   }
 }

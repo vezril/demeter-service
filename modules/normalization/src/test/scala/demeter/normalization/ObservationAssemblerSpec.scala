@@ -78,11 +78,32 @@ final class ObservationAssemblerSpec extends AnyFunSuite {
     assert(obs.confidence == Confidence.Low)
   }
 
-  test("confidence is the minimum of price and name-split confidence") {
-    // "Cola 2L" is language-ambiguous -> name split Low; scalar price is High
+  test("an unreadable name does NOT drag down a clean price") {
+    // "Cola 2L" is language-ambiguous, so the name split is Low. Measured on a
+    // real flyer run this was true of ~65% of items — brand-heavy names the
+    // language heuristic cannot classify. Collapsing the two confidences meant
+    // every one of those clean scalar prices was weighted at 0.4 in the history
+    // median (07.2), which is what decides whether you get alerted at all.
     val obs = assemble(item(rawName = "Cola 2L", current = Some(199L)))
     assert(obs.priceBasis == PriceBasis.ScalarPrice)
-    assert(obs.confidence == Confidence.Low)
+    assert(obs.priceConfidence == Confidence.High, "the price is a clean scalar and stays trusted")
+    assert(obs.matchConfidence == Confidence.Low, "identity is genuinely uncertain")
+    assert(obs.confidence == Confidence.Low, "the combined view is still available, and still the minimum")
+  }
+
+  test("a shaky price does NOT make identity look shaky either") {
+    // the mirror case: a price scraped from free text, on a name that split cleanly
+    val obs = assemble(item(rawName = "Beurre d'arachide croquant $4.99"))
+    assert(obs.priceBasis == PriceBasis.ParsedFromText)
+    assert(obs.priceConfidence == Confidence.Low)
+    assert(obs.matchConfidence == Confidence.High, "the French name resolved unambiguously")
+  }
+
+  test("an ambiguous size lowers identity, not price") {
+    // two size tokens means the product key may be wrong — an identity problem
+    val obs = assemble(item(rawName = "Juice 1 L bottle, 500 g net", current = Some(499L)))
+    assert(obs.priceConfidence == Confidence.High)
+    assert(obs.matchConfidence != Confidence.High)
   }
 
   test("a parseable size attaches a unit price regardless of basis") {

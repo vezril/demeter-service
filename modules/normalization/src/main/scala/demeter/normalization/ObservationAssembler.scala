@@ -15,8 +15,12 @@ import demeter.foundations._
   *   4. percent-off without a base      -> price None, PercentOffUnknown
   *   5. bare price token in the name    -> ParsedFromText, Low
   *   6. none of the above               -> price None, Unknown (saleText kept)
-  * Observation confidence is the MINIMUM of price-derivation and name-split
-  * confidence (an ambiguous size also caps it at Medium).
+  * Price confidence and match confidence are recorded SEPARATELY. They answer
+  * different questions — "is this price real?" versus "did we identify the item
+  * correctly?" — and collapsing them to a single minimum meant an unclassifiable
+  * product name dragged down a perfectly clean scalar price, which then weighed
+  * that price down in the history median (07.2). Measured against a real flyer
+  * run, that mis-weighted about 65% of all priced observations.
   */
 object ObservationAssembler {
 
@@ -81,7 +85,10 @@ object ObservationAssembler {
       saleText = item.saleStory,
       validFrom = item.validFrom,
       validTo = item.validTo,
-      confidence = derived.confidence.min(split.confidence).min(sizeConfidence),
+      priceConfidence = derived.confidence,
+      // identity: how the name split went, tempered by an ambiguous size —
+      // a wrong size means a wrong product key, which is an identity problem
+      matchConfidence = split.confidence.min(sizeConfidence),
     )
   }
 }

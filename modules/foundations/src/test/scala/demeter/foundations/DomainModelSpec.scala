@@ -31,7 +31,8 @@ final class DomainModelSpec extends AnyFunSuite {
       saleText = Some("50% off"),
       validFrom = from,
       validTo = to,
-      confidence = Confidence.Medium,
+      priceConfidence = Confidence.Medium,
+      matchConfidence = Confidence.Medium,
     )
     assert(obs.effectivePrice.isEmpty)
     assert(obs.priceBasis == PriceBasis.PercentOffUnknown)

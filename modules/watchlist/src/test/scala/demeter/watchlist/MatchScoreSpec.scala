@@ -28,7 +28,8 @@ final class MatchScoreSpec extends AnyFunSuite with ScalaCheckPropertyChecks {
       saleText = None,
       validFrom = at,
       validTo = at.plusSeconds(604800),
-      confidence = confidence,
+      priceConfidence = confidence,
+      matchConfidence = confidence,
     )
 
   private val watch = WatchItem.of(WatchId("w1"), "Milk", List("milk")).toOption.get

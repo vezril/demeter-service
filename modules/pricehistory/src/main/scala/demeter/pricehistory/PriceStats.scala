@@ -50,7 +50,9 @@ object RollingStats {
       case PriceBasis.PercentOffUnknown => 0.0 // no price to contribute anyway
       case PriceBasis.Unknown           => 0.0
     }
-    val confidenceWeight = point.observation.confidence match {
+    // priceConfidence, deliberately: how well we could split a bilingual product
+    // name has no bearing on whether its price is trustworthy
+    val confidenceWeight = point.observation.priceConfidence match {
       case Confidence.High   => 1.0
       case Confidence.Medium => 0.7
       case Confidence.Low    => 0.4

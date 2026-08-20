@@ -54,7 +54,8 @@ object AlertingFixtures {
       saleText = saleText,
       validFrom = validFrom,
       validTo = validTo,
-      confidence = Confidence.High,
+      priceConfidence = Confidence.High,
+      matchConfidence = Confidence.High,
     )
 
   def matched(w: WatchItem, o: PriceObservation, textScore: Double = 1.0): Match =

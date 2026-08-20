@@ -114,5 +114,21 @@ final case class PriceObservation(
     saleText: Option[String],
     validFrom: Instant,
     validTo: Instant,
-    confidence: Confidence,
-)
+    /** How much the PRICE can be trusted: where on 02.6's derivation ladder it
+      * came from. This is what weights price history (07.2).
+      */
+    priceConfidence: Confidence,
+    /** How well the item's IDENTITY was resolved — the bilingual name split and
+      * size extraction. This is what should temper MATCHING (04.4), and it says
+      * nothing about whether the price is right.
+      */
+    matchConfidence: Confidence,
+) {
+
+  /** The old combined value, kept derivable for anything that genuinely wants
+    * "how much do we trust this row overall". It is deliberately NOT what
+    * weights price history: a clean scalar price is a clean scalar price even
+    * when we cannot tell what language its name is in.
+    */
+  def confidence: Confidence = priceConfidence.min(matchConfidence)
+}
