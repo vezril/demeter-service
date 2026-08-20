@@ -25,6 +25,12 @@ final case class RunReport(
     matches: Int = 0,
     alertsDelivered: Int = 0,
     alertsSuppressed: Int = 0,
+    /** Why alerts were held back, per 05.1's reasons. A bare total cannot
+      * distinguish "everything is above your price ceiling" from "we have no
+      * history yet" from "you already heard about all of it" — three very
+      * different situations that all look like silence.
+      */
+    suppressedByReason: Map[String, Int] = Map.empty,
     degraded: List[DegradedSource] = Nil,
     failures: List[DealWatchError] = Nil,
     elapsed: Option[FiniteDuration] = None,
@@ -34,6 +40,12 @@ final case class RunReport(
     if (itemsParsed + itemsDropped == 0) 0.0 else itemsDropped.toDouble / (itemsParsed + itemsDropped)
 
   def isDegraded(source: SourceName): Boolean = degraded.exists(_.source == source)
+
+  def withSuppression(reason: String): RunReport =
+    copy(
+      alertsSuppressed = alertsSuppressed + 1,
+      suppressedByReason = suppressedByReason.updated(reason, suppressedByReason.getOrElse(reason, 0) + 1),
+    )
 }
 
 sealed abstract class DriftAlarm(val message: String) extends Product with Serializable
@@ -104,6 +116,10 @@ object Observability {
       metric("matches", report.matches.toDouble),
       metric("alerts_delivered", report.alertsDelivered.toDouble),
       metric("alerts_suppressed", report.alertsSuppressed.toDouble),
+    ).mkString("\n") + report.suppressedByReason.toList.sorted.map { case (reason, n) =>
+      "\n" + metric(s"""alerts_suppressed_reason{reason="$reason"}""", n.toDouble)
+    }.mkString + List(
+      "",
       metric("sources_degraded", report.degraded.size.toDouble),
       metric("decode_failure_rate", report.decodeFailureRate),
       metric("run_seconds", report.elapsed.map(_.toSeconds.toDouble).getOrElse(0.0)),

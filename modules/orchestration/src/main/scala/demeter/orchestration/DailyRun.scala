@@ -170,14 +170,14 @@ final class DailyRun[F[_]](
       )
       verdict = DealScorer.scoreDeal(m.observation, stats, None, config.deals)
       _ <- DealDecision.decide(m, verdict) match {
-        case AlertDecision.Suppress(_) => report.update(r => r.copy(alertsSuppressed = r.alertsSuppressed + 1))
+        case AlertDecision.Suppress(why) => report.update(_.withSuppression(why.message))
         case AlertDecision.Alert(deal) => deliverIfNew(deal, now, report)
       }
     } yield ()
 
   private def deliverIfNew(deal: Deal, now: Instant, report: Ref[F, RunReport]): F[Unit] =
     alertState.get.flatMap { sent =>
-      if (!AlertDedup.isNew(deal, sent)) report.update(r => r.copy(alertsSuppressed = r.alertsSuppressed + 1))
+      if (!AlertDedup.isNew(deal, sent)) report.update(_.withSuppression("already alerted this window"))
       else
         merchantNames.get.flatMap { names =>
           val merchant = names.getOrElse(deal.observation.merchantId, s"merchant ${deal.observation.merchantId.value}")

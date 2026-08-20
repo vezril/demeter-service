@@ -37,6 +37,31 @@ final class ObservabilitySpec extends AnyFunSuite {
     assert(report.isDegraded(SourceName("pcexpress")))
   }
 
+  test("suppression is reported by reason, because silence has several causes") {
+    // "398 suppressed" cannot distinguish a price ceiling that is too tight from
+    // an empty history from having already told you — all three look identical
+    val report = RunReport(matches = 398)
+      .withSuppression("above max price")
+      .withSuppression("above max price")
+      .withSuppression("not a sale")
+      .withSuppression("already alerted this window")
+
+    assert(report.alertsSuppressed == 4)
+    assert(report.suppressedByReason == Map("above max price" -> 2, "not a sale" -> 1, "already alerted this window" -> 1))
+
+    val text = Observability.prometheus(report)
+    assert(text.contains("""demeter_alerts_suppressed_reason{reason="above max price"} 2.0"""))
+    assert(text.contains("demeter_alerts_suppressed 4.0"))
+    assert(text.contains("demeter_run_seconds"), "the rest of the exposition survives")
+  }
+
+  test("a report with no suppressions emits clean metrics") {
+    val text = Observability.prometheus(RunReport(matches = 3, alertsDelivered = 3))
+    assert(!text.contains("suppressed_reason"))
+    assert(text.contains("demeter_alerts_suppressed 0.0"))
+    assert(text.linesIterator.forall(_.startsWith("demeter_")), "no stray blank lines in the exposition")
+  }
+
   test("a decode-failure spike raises a drift alarm naming the source") {
     val report = RunReport(flyersListed = 10, itemsParsed = 900, itemsDropped = 100) // 10% > 5% threshold
     val alarms = Observability.alarms(report, flipp)
