@@ -1,0 +1,23 @@
+# sbt / build
+target/
+project/target/
+project/project/
+.bsp/
+# stryker
+stryker4s-report/
+# IDE
+.idea/
+.metals/
+.bloop/
+.vscode/
+metals.sbt
+# os / env
+.DS_Store
+*.log
+.env
+local.conf
+
+# the original delivery archive — its contents are tracked as real files now
+demeter-service.zip
+# machine-local Claude Code permission grants (absolute paths, not shareable)
+.claude/settings.local.json
