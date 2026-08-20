@@ -40,8 +40,13 @@ object FlippDecoders {
     */
   def priceValue(source: String, pointer: String, value: Option[Json]): Either[Decode, Option[Money]] =
     value match {
-      case None                  => Right(None)
-      case Some(j) if j.isNull   => Right(None)
+      case None                => Right(None)
+      case Some(j) if j.isNull => Right(None)
+      // An EMPTY string means the same thing null does: this item carries no
+      // price, with the offer living in the name or artwork instead (01.4).
+      // Treating it as a bad price dropped 142 of 485 items in a single real
+      // flyer — roughly 14% of everything the first live run fetched.
+      case Some(j) if j.asString.exists(_.trim.isEmpty) => Right(None)
       case Some(j) =>
         val parsed = j.asNumber
           .map(n => Money.fromBigDecimal(n.toBigDecimal.getOrElse(BigDecimal(n.toDouble))))

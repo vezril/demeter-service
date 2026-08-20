@@ -39,6 +39,24 @@ final class FlippDecodersSpec extends AnyFunSuite with ScalaCheckPropertyChecks 
     assert(price(Some(json("0"))) == Right(Some(Money.cents(0))))
   }
 
+  test("an EMPTY price string means absent, exactly as null does") {
+    // real per-flyer responses use "" for items whose offer is in the artwork;
+    // treating it as malformed dropped ~14% of the first live run
+    def price(v: Option[Json]) = FlippDecoders.priceValue("flipp", "p", v)
+    assert(price(Some(json("\"\""))) == Right(None))
+    assert(price(Some(json("\"   \""))) == Right(None))
+  }
+
+  test("an item with an empty price decodes as price-absent rather than being dropped") {
+    val blank = json(
+      """{"id":1,"flyer_id":9,"name":"ASSORTED HAND TOOLS","price":"",
+         "valid_from":"2026-08-20T04:00:00+00:00","valid_to":"2026-08-27T03:59:59+00:00"}"""
+    )
+    val Right(item) = FlippDecoders.decodeItem("flipp", blank.hcursor, "items[0]")
+    assert(item.currentPrice.isEmpty)
+    assert(item.rawName == "ASSORTED HAND TOOLS")
+  }
+
   test("a non-numeric non-null price is a field-level decode error naming the pointer") {
     for (v <- Seq("\"N/A\"", "\"see store\"", "\"$4.99\"")) {
       val result = FlippDecoders.priceValue("flipp", "items[3].current_price", Some(json(v)))
