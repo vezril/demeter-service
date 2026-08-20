@@ -14,6 +14,19 @@ import demeter.normalization.TextNormalizer
 final case class MatcherConfig(
     fuzzyThreshold: Double = 0.90,
     stopwords: Set[String] = TextNormalizer.DefaultStopwords,
+    /** How hard to penalise a term that accounts for only a sliver of the item
+      * name. 0 disables it entirely (the term's match quality alone, which is
+      * what this did originally); 1 is the raw token ratio.
+      *
+      * Neither extreme is right. Without any penalty, a watch for "coffee"
+      * matched a $1,799 patio set on "Glass Top Coffee & End Table" as strongly
+      * as it matched a bag of coffee. With the raw ratio, "milk" against
+      * "natrel fine filtered milk 4 l" scores 0.17 — but that is a genuinely
+      * good match, because grocery names carry brand and descriptors around the
+      * head noun. The square root sits between: it separates incidental matches
+      * in long names from real ones without flattening normal grocery naming.
+      */
+    lengthDampening: Double = 0.5,
 )
 
 final case class TextMatch(term: String, textScore: Double)
@@ -37,13 +50,25 @@ object Matcher {
     else
       formTokens.flatMap { tokens =>
         // every term token must be covered by some form token: exact, or JW >= threshold
-        val coverage = termTokens.map { tt =>
+        val quality = termTokens.map { tt =>
           if (tokens.contains(tt)) Some(1.0)
           else tokens.map(jaroWinkler(tt, _)).maxOption.filter(_ >= config.fuzzyThreshold)
         }
-        if (coverage.forall(_.isDefined)) Some(coverage.flatten.sum / coverage.size) else None
+        if (quality.forall(_.isDefined))
+          Some((quality.flatten.sum / quality.size) * shareOfName(termTokens.size, tokens.size, config))
+        else None
       }.maxOption.map(TextMatch(term, _))
   }
+
+  /** How much of the item name the term accounts for, dampened.
+    *
+    * Whether a term matched is unaffected — this only ranks matches against each
+    * other, which is what decides the one alert you get when a dozen items match
+    * the same watch (04.4).
+    */
+  def shareOfName(termTokens: Int, nameTokens: Int, config: MatcherConfig = MatcherConfig()): Double =
+    if (nameTokens <= 0 || config.lengthDampening <= 0) 1.0
+    else math.pow(math.min(1.0, termTokens.toDouble / nameTokens.toDouble), config.lengthDampening)
 
   /** Standard Jaro-Winkler similarity (prefix bonus capped at 4). */
   def jaroWinkler(a: String, b: String): Double =

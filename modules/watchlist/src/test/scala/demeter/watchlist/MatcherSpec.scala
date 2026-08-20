@@ -73,7 +73,64 @@ final class MatcherSpec extends AnyFunSuite {
     val exact = Matcher.matchItem(watch(List("yoghurt")), obs(List("greek yoghurt"))).get
     val fuzzy = Matcher.matchItem(watch(List("yogourt")), obs(List("greek yoghurt"))).get
     assert(exact.textScore > fuzzy.textScore)
-    assert(exact.textScore == 1.0)
+    // no longer 1.0: the term accounts for one of two tokens. A perfect score is
+    // reserved for a term that accounts for the whole name.
+    assert(Matcher.matchItem(watch(List("yoghurt")), obs(List("yoghurt"))).get.textScore == 1.0)
+  }
+
+  test("a term buried in a long name ranks below the same term in a short one") {
+    // the real case: a watch for coffee matched a $1,799 patio set as strongly
+    // as it matched actual coffee, and outranked it on price
+    val patio = Matcher
+      .matchItem(
+        watch(List("coffee")),
+        obs(List("montego 6 piece canopy outdoor patio conversation set with canopy sofa 2 armless chairs ottoman glass top coffee end table")),
+      )
+      .get
+    val actualCoffee = Matcher.matchItem(watch(List("coffee")), obs(List("nabob ground coffee 300 g"))).get
+
+    assert(actualCoffee.textScore > patio.textScore)
+    assert(patio.textScore < 0.3, s"an incidental match must score low, got ${patio.textScore}")
+  }
+
+  test("normal grocery naming is not punished for having brand and descriptors") {
+    // "milk" covers 1 of 6 tokens here, but this is exactly what a good grocery
+    // match looks like; the raw ratio (0.17) would rank it near the patio set
+    val milk = Matcher.matchItem(watch(List("milk")), obs(List("natrel fine filtered milk 4 l"))).get
+    val patio = Matcher
+      .matchItem(watch(List("coffee")), obs(List("montego 6 piece canopy outdoor patio conversation set with canopy sofa 2 armless chairs ottoman glass top coffee end table")))
+      .get
+    assert(milk.textScore > patio.textScore * 1.5, "a real grocery match must stay clearly ahead")
+  }
+
+  test("a term covering more of the name outranks one covering less") {
+    val whole = Matcher.matchItem(watch(List("greek yoghurt")), obs(List("greek yoghurt"))).get
+    val half  = Matcher.matchItem(watch(List("yoghurt")), obs(List("greek yoghurt"))).get
+    assert(whole.textScore > half.textScore)
+  }
+
+  test("length dampening is a knob, and zero restores the original behaviour") {
+    val off = MatcherConfig(lengthDampening = 0.0)
+    assert(Matcher.matchItem(watch(List("coffee")), obs(List("a b c d e f g h coffee")), off).get.textScore == 1.0)
+    assert(Matcher.shareOfName(1, 20, off) == 1.0)
+
+    val raw = MatcherConfig(lengthDampening = 1.0)
+    assert(Matcher.shareOfName(1, 4, raw) == 0.25, "dampening 1 is the plain token ratio")
+    assert(Matcher.shareOfName(1, 4) == 0.5, "the default softens it")
+  }
+
+  test("a term longer than the name does not score above 1") {
+    assert(Matcher.shareOfName(9, 2) == 1.0)
+    val m = Matcher.matchItem(watch(List("milk")), obs(List("milk"))).get
+    assert(m.textScore == 1.0)
+  }
+
+  test("length dampening changes ranking only, never whether something matched") {
+    // every match assertion above still holds under the harshest setting
+    val raw = MatcherConfig(lengthDampening = 1.0)
+    assert(Matcher.matchItem(watch(List("milk")), obs(List("lait natrel", "natrel milk")), raw).isDefined)
+    assert(Matcher.matchItem(watch(List("chicken breast")), obs(List("chicken broth")), raw).isEmpty)
+    assert(Matcher.matchItem(watch(List("yogourt")), obs(List("greek yoghurt")), raw).isDefined)
   }
 
   test("terms are OR'd: any matching term is a match") {
