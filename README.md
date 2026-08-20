@@ -78,12 +78,21 @@ startup with a specific message rather than failing three layers deep later.
 | `DEMETER_JDBC_URL` / `DEMETER_DB_USER` / `DEMETER_DB_PASSWORD` | Postgres connection |
 | `DEMETER_HA_WEBHOOK` / `DEMETER_HA_MQTT_TOPIC` | Home Assistant alert target |
 | `DEMETER_NTFY_URL` | fallback sink |
+| `DEMETER_MQTT_BROKER` | MQTT broker, e.g. `tcp://homeassistant.local:1883` |
+| `DEMETER_MQTT_USER` / `DEMETER_MQTT_PASSWORD` | broker credentials, if required |
 | `DEMETER_SCHEDULE_CRON` | when to run, default `0 6 * * *` (06:00 daily) |
 | `DEMETER_SCHEDULE_ZONE` | schedule timezone, default `America/Montreal` |
 | `DEMETER_PCEXPRESS_ENABLED` / `DEMETER_PCEXPRESS_KEY` | optional enrichment |
 
 Secrets are read from the environment, never committed, and redacted in the
 startup config dump.
+
+Alerts reach Home Assistant by webhook or MQTT. Setting `DEMETER_HA_MQTT_TOPIC`
+also requires `DEMETER_MQTT_BROKER`, or startup fails — a topic with nowhere to
+publish it looks configured and delivers nothing. Messages go out at QoS 1 and
+are deliberately **not** retained: a retained alert is redelivered to every new
+subscriber, so an HA restart would re-fire the automation about a deal from last
+week. No broker connection is opened for a webhook-only deployment.
 
 ### Scheduling
 

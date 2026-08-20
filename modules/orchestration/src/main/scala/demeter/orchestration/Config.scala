@@ -42,6 +42,9 @@ final case class HistoryConfig(
 final case class SinkConfig(
     haWebhookUrl: Option[String] = None,
     haMqttTopic: Option[String] = None,
+    mqttBrokerUrl: Option[String] = None,
+    mqttUsername: Option[String] = None,
+    mqttPassword: Option[Secret] = None,
     ntfyTopicUrl: Option[String] = None,
     emailTo: Option[String] = None,
     order: List[String] = List("home-assistant", "ntfy", "email"),
@@ -140,6 +143,13 @@ object Config {
       if (configured.isEmpty || config.sinks.order.isEmpty) List(ConfigError.EmptySinkChain) else Nil
     }
 
+    // An MQTT topic with nowhere to publish it is the same class of mistake as
+    // an empty sink chain: it looks configured and delivers nothing.
+    val mqttErrors =
+      if (config.sinks.haMqttTopic.isDefined && config.sinks.mqttBrokerUrl.forall(_.trim.isEmpty))
+        List(ConfigError.MissingKey("mqtt", "sinks.mqttBrokerUrl"))
+      else Nil
+
     val valueErrors =
       List(
         Option.when(config.run.flyerConcurrency < 1)(
@@ -159,7 +169,7 @@ object Config {
         .map(why => ConfigError.BadSchedule(config.schedule.cron, why))
         .toList
 
-    val errors = enrichmentErrors ++ fallbackErrors ++ sinkErrors ++ valueErrors ++ scheduleErrors
+    val errors = enrichmentErrors ++ fallbackErrors ++ sinkErrors ++ mqttErrors ++ valueErrors ++ scheduleErrors
     if (errors.isEmpty) Right(config) else Left(errors)
   }
 

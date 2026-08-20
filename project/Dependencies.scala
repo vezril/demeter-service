@@ -15,6 +15,7 @@ object Dependencies {
     val pureconfig  = "0.17.7"
     val log4cats    = "2.7.0"
     val logback     = "1.5.6"
+    val paho        = "1.2.5"
     val scalaTest   = "3.2.19"
     val scalaTestPlus = "3.2.19.0"
     val scalaCheck  = "1.18.0"
@@ -45,6 +46,9 @@ object Dependencies {
     "org.tpolecat" %% "doobie-postgres" % V.doobie,
     "org.tpolecat" %% "doobie-hikari"   % V.doobie
   )
+
+  // --- mqtt (the Home Assistant alert sink, 05.4) ---
+  val paho = "org.eclipse.paho" % "org.eclipse.paho.client.mqttv3" % V.paho
 
   // --- config / logging (orchestration) ---
   val pureconfig = "com.github.pureconfig" %% "pureconfig" % V.pureconfig

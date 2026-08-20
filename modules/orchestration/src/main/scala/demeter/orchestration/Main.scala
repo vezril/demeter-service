@@ -120,6 +120,9 @@ object Main extends IOApp {
                 haWebhookUrl = env.get("DEMETER_HA_WEBHOOK"),
                 haMqttTopic = env.get("DEMETER_HA_MQTT_TOPIC"),
                 ntfyTopicUrl = env.get("DEMETER_NTFY_URL"),
+                mqttBrokerUrl = env.get("DEMETER_MQTT_BROKER"),
+                mqttUsername = env.get("DEMETER_MQTT_USER"),
+                mqttPassword = env.get("DEMETER_MQTT_PASSWORD").map(Secret.apply),
               ),
               storage = StorageConfig(
                 jdbcUrl = env.getOrElse("DEMETER_JDBC_URL", "jdbc:postgresql://localhost:5432/demeter"),
@@ -140,7 +143,10 @@ object Main extends IOApp {
       _      <- Resource.eval(Schema.migrate(xa))
       policy <- Resource.eval(Random.scalaUtilRandom[IO].flatMap(implicit r => HttpPolicy.create[IO](config.http)))
       source = new FlippSource[IO](Http4sTransport[IO](client), policy, config.sources.flippBaseUrl)
-      sink   = buildSink(config, client)
+      // only opened when a topic is actually configured — no broker connection
+      // is made for a webhook-only deployment
+      publish <- mqttPublisher(config)
+      sink   = buildSink(config, client, publish)
     } yield (
       source,
       new DoobieRawResponseStore[IO](xa),
@@ -160,8 +166,31 @@ object Main extends IOApp {
       connectEC = scala.concurrent.ExecutionContext.global,
     )
 
+  /** Connects only if an MQTT topic is configured; otherwise yields a publisher
+    * that reports the misconfiguration rather than pretending to deliver.
+    */
+  private def mqttPublisher(config: Config): Resource[IO, (String, String) => IO[Either[DealWatchError, Unit]]] =
+    (config.sinks.haMqttTopic, config.sinks.mqttBrokerUrl) match {
+      case (Some(_), Some(broker)) =>
+        MqttPublisher.resource[IO](
+          MqttConfig(
+            brokerUrl = broker,
+            username = config.sinks.mqttUsername,
+            password = config.sinks.mqttPassword.map(_.value),
+          )
+        )
+      case _ =>
+        Resource.pure[IO, (String, String) => IO[Either[DealWatchError, Unit]]]((_, _) =>
+          IO.pure(Left(DealWatchError.InvalidDomain("mqtt", "no MQTT broker configured")))
+        )
+    }
+
   /** The sink chain is config-ordered; targets are never derived from flyer content (05.4). */
-  private def buildSink(config: Config, client: org.http4s.client.Client[IO]): AlertSink[IO] = {
+  private def buildSink(
+      config: Config,
+      client: org.http4s.client.Client[IO],
+      publish: (String, String) => IO[Either[DealWatchError, Unit]],
+  ): AlertSink[IO] = {
     val post: (String, String) => IO[Either[DealWatchError, Unit]] = (url, body) =>
       org.http4s.Uri.fromString(url) match {
         case Left(e) => IO.pure(Left(DealWatchError.Transport(url, e.message)))
@@ -175,7 +204,7 @@ object Main extends IOApp {
     val ha = new HomeAssistantSink[IO](
       HaConfig(config.sinks.haWebhookUrl, config.sinks.haMqttTopic, config.locale),
       post,
-      (_, _) => IO.pure(Left(DealWatchError.InvalidDomain("mqtt", "MQTT publishing not wired in v1"))),
+      publish,
     )
     val fallbacks = config.sinks.ntfyTopicUrl.map(url => new NtfySink[IO](url, config.locale, post)).toList
     new ChainSink[IO](ha, fallbacks)

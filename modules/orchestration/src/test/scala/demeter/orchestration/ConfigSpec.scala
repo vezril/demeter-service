@@ -68,6 +68,18 @@ final class ConfigSpec extends AnyFunSuite {
     assert(Config.validate(broken).swap.toOption.get.size >= 3)
   }
 
+  test("an MQTT topic with no broker is refused: it looks configured and delivers nothing") {
+    val errors = Config
+      .validate(config(sinks = SinkConfig(haMqttTopic = Some("demeter/deals"))))
+      .swap.toOption.get
+    assert(errors.exists(_.message.contains("mqttBrokerUrl")))
+  }
+
+  test("a complete MQTT sink configuration passes") {
+    val c = config(sinks = SinkConfig(haMqttTopic = Some("demeter/deals"), mqttBrokerUrl = Some("tcp://ha.local:1883")))
+    assert(Config.validate(c).isRight)
+  }
+
   test("an unrunnable schedule stops startup instead of surfacing a day later") {
     // the old loop ignored cron entirely; a typo now has to fail at boot, not
     // leave the service sitting idle looking healthy
