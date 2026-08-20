@@ -131,4 +131,65 @@ final class FlippDecodersSpec extends AnyFunSuite with ScalaCheckPropertyChecks 
       FlippDecoders.parseJson("flipp", Fixtures.bytes("items_search.sample.json")).flatMap(FlippDecoders.decodeSearch("flipp", _))
     assert(search.merchants.contains(Merchant(MerchantId(2269), "Metro")))
   }
+
+  // --- the per-flyer shape (@contract, 01.4) ---
+  //
+  // This fixture did not exist until a live run: the repo shipped only the
+  // SEARCH capture, and 01.4's field table described that shape too. Every
+  // hand-written test below the old table therefore agreed with the decoder and
+  // both were wrong about the endpoint they claimed to cover.
+
+  test("a real per-flyer items response decodes — it has NO merchant and NO current_price (@contract)") {
+    val Right(parsed) =
+      FlippDecoders.parseJson("flipp", Fixtures.bytes("flyer_items.sample.json")).flatMap(FlippDecoders.decodeItems("flipp", _))
+
+    assert(parsed.dropped == 0, "every item must decode; requiring merchant_id dropped all 170 in production")
+    assert(parsed.items.size == 4)
+
+    val ribs = parsed.items.find(_.rawName == "PORK BACK RIBS").get
+    assert(ribs.currentPrice.contains(Money.cents(399)), "the price field is `price`, a string, not `current_price`")
+    assert(ribs.flyerId == FlyerId(8092458L))
+    assert(ribs.merchantId == FlippDecoders.UnresolvedMerchant, "merchant belongs to the flyer, resolved by the orchestrator")
+    assert(ribs.validFrom.isBefore(ribs.validTo))
+  }
+
+  test("the undocumented `discount` integer is preserved opaquely, never read as a percentage") {
+    val Right(parsed) =
+      FlippDecoders.parseJson("flipp", Fixtures.bytes("flyer_items.sample.json")).flatMap(FlippDecoders.decodeItems("flipp", _))
+
+    val ribs = parsed.items.find(_.rawName == "PORK BACK RIBS").get
+    assert(ribs.saleStory.exists(_.contains("20")), "kept for diagnostics")
+    assert(ribs.originalPrice.isEmpty, "no original price may be fabricated from an unverified unit")
+    // and it must not be mistaken for a percent-off by 02.6 — there is no '%'
+    assert(!ribs.saleStory.exists(_.contains("%")))
+
+    val plain = parsed.items.find(_.rawName == "FRIED BREAD STICK").get
+    assert(plain.saleStory.isEmpty, "an item with no discount carries no sale text")
+  }
+
+  test("both endpoint shapes decode through the same item decoder") {
+    // search shape: merchant_id and current_price present
+    val Right(search) =
+      FlippDecoders.parseJson("flipp", Fixtures.bytes("items_search.sample.json")).flatMap(FlippDecoders.decodeSearch("flipp", _))
+    assert(search.flyerItems.forall(_.merchantId != FlippDecoders.UnresolvedMerchant))
+
+    // per-flyer shape: neither present
+    val Right(perFlyer) =
+      FlippDecoders.parseJson("flipp", Fixtures.bytes("flyer_items.sample.json")).flatMap(FlippDecoders.decodeItems("flipp", _))
+    assert(perFlyer.items.forall(_.merchantId == FlippDecoders.UnresolvedMerchant))
+    assert(perFlyer.items.forall(_.currentPrice.isDefined))
+  }
+
+  test("an explicit current_price still wins over the per-flyer `price` alias") {
+    val json = FlippDecodersSpecHelpers.itemWithBoth
+    val Right(item) = FlippDecoders.decodeItem("flipp", json.hcursor, "items[0]")
+    assert(item.currentPrice.contains(Money.cents(499)), "current_price is the more specific field")
+  }
+}
+
+private object FlippDecodersSpecHelpers {
+  val itemWithBoth: io.circe.Json = io.circe.parser.parse(
+    """{"id":1,"flyer_id":9,"name":"Both","current_price":4.99,"price":"1.11",
+       "valid_from":"2026-08-20T04:00:00+00:00","valid_to":"2026-08-27T03:59:59+00:00"}"""
+  ).toOption.get
 }

@@ -82,6 +82,7 @@ startup with a specific message rather than failing three layers deep later.
 | `DEMETER_MQTT_USER` / `DEMETER_MQTT_PASSWORD` | broker credentials, if required |
 | `DEMETER_SCHEDULE_CRON` | when to run, default `0 6 * * *` (06:00 daily) |
 | `DEMETER_SCHEDULE_ZONE` | schedule timezone, default `America/Montreal` |
+| `DEMETER_SCHEDULE_RUN_ON_START` | `true` to run once immediately at boot |
 | `DEMETER_PCEXPRESS_ENABLED` / `DEMETER_PCEXPRESS_KEY` | optional enrichment |
 
 Secrets are read from the environment, never committed, and redacted in the

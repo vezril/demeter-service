@@ -115,6 +115,7 @@ object Main extends IOApp {
                 zone = env.get("DEMETER_SCHEDULE_ZONE")
                   .flatMap(z => scala.util.Try(java.time.ZoneId.of(z)).toOption)
                   .getOrElse(java.time.ZoneId.of("America/Montreal")),
+                runOnStart = env.get("DEMETER_SCHEDULE_RUN_ON_START").contains("true"),
               ),
               sinks = SinkConfig(
                 haWebhookUrl = env.get("DEMETER_HA_WEBHOOK"),

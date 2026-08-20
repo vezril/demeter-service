@@ -107,7 +107,12 @@ final class DailyRun[F[_]](
               case Left(error) =>
                 report.update(r => r.copy(flyersFailed = r.flyersFailed + 1, failures = r.failures :+ error))
               case Right(rawId) =>
-                val observed = items.items.map(ObservationAssembler.assemble(_, now, config.locale))
+                // Per-flyer responses carry no merchant — it belongs to the
+                // flyer, not the item — so resolve it here, where the flyer is
+                // authoritative. Without this the product key (02.7) would be
+                // built on merchant 0 and every product would collide.
+                val owned    = items.items.map(i => i.copy(merchantId = flyer.merchantId))
+                val observed = owned.map(ObservationAssembler.assemble(_, now, config.locale))
                 observations.saveAll(observed, rawId).flatMap {
                   case Left(error) =>
                     report.update(r => r.copy(flyersFailed = r.flyersFailed + 1, failures = r.failures :+ error))

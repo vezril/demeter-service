@@ -1,0 +1,57 @@
+{
+  "_comment": "CAPTURED LIVE 2026-08-20 from GET /flipp/flyers/8092458 (H2X1Y6, en-ca). Subsetted to 4 of 170 items and to the fields the decoder reads. Note this shape differs from items_search.sample.json: no merchant_id, no current_price, no sale_story.",
+  "items": [
+    {
+      "id": 1034367952,
+      "flyer_id": 8092458,
+      "name": "PORK BACK RIBS",
+      "short_name": null,
+      "brand": null,
+      "price": "3.99",
+      "discount": 20,
+      "display_type": 1,
+      "valid_from": "2026-08-20T00:00:00-04:00",
+      "valid_to": "2026-08-26T23:59:59-04:00",
+      "available_to": "2026-08-26T23:59:59-04:00"
+    },
+    {
+      "id": 1034367909,
+      "flyer_id": 8092458,
+      "name": "FRIED BREAD STICK",
+      "short_name": null,
+      "brand": null,
+      "price": "2.99",
+      "discount": null,
+      "display_type": 1,
+      "valid_from": "2026-08-20T00:00:00-04:00",
+      "valid_to": "2026-08-26T23:59:59-04:00",
+      "available_to": "2026-08-26T23:59:59-04:00"
+    },
+    {
+      "id": 1034367954,
+      "flyer_id": 8092458,
+      "name": "BONELESS PORK LEG WITH RIND",
+      "short_name": null,
+      "brand": null,
+      "price": "2.49",
+      "discount": 15,
+      "display_type": 1,
+      "valid_from": "2026-08-25T00:00:00-04:00",
+      "valid_to": "2026-08-26T23:59:59-04:00",
+      "available_to": "2026-08-26T23:59:59-04:00"
+    },
+    {
+      "id": 1034368007,
+      "flyer_id": 8092458,
+      "name": "FRESH SALMON FILLET",
+      "short_name": null,
+      "brand": null,
+      "price": "11.49",
+      "discount": 4,
+      "display_type": 1,
+      "valid_from": "2026-08-21T00:00:00-04:00",
+      "valid_to": "2026-08-23T23:59:59-04:00",
+      "available_to": "2026-08-26T23:59:59-04:00"
+    }
+  ]
+}

@@ -125,8 +125,23 @@ object FlippDecoders {
         Right(ListingParse(flyers, merchants, dropped = results.count(_.isLeft)))
     }
 
+  /** The merchant of an item that did not carry one. Per-flyer responses omit
+    * merchant entirely — it is a property of the flyer — so the orchestrator
+    * resolves it from the flyer it already holds (01.4's stated contract).
+    */
+  val UnresolvedMerchant: MerchantId = MerchantId(0)
+
   /** One flyer item (01.4/01.3). A null price is expected, never an error; an
     * inverted validity window or missing name is a Decode rejection of the item.
+    *
+    * The two endpoints return DIFFERENT item shapes, verified live 2026-08-20:
+    *
+    *   items/search  -> flyer_item_id, current_price, original_price, sale_story, merchant_id
+    *   flyers/{id}   -> id, price (a string), discount (an int), and NO merchant
+    *
+    * 01.4's field table described the search shape, which is why this decoder
+    * originally required `merchant_id` and `current_price` and therefore dropped
+    * every single item of every real per-flyer response.
     */
   def decodeItem(source: String, c: ACursor, pointer: String): Either[Decode, FlyerItem] =
     for {
@@ -134,10 +149,15 @@ object FlippDecoders {
       sourceItemId <- long(source, c, "flyer_item_id", pointer)
         .orElse(long(source, c, "id", pointer))
         .map(_.toString)
-      flyerId    <- long(source, c, "flyer_id", pointer).map(FlyerId(_))
-      merchantId <- long(source, c, "merchant_id", pointer).map(n => MerchantId(n.toInt))
-      current    <- priceValue(source, s"$pointer.current_price", c.downField("current_price").focus)
-      original   <- priceValue(source, s"$pointer.original_price", c.downField("original_price").focus)
+      flyerId <- long(source, c, "flyer_id", pointer).map(FlyerId(_))
+      // absent on the per-flyer endpoint; the orchestrator fills it from the flyer
+      merchantId = long(source, c, "merchant_id", pointer).map(n => MerchantId(n.toInt)).getOrElse(UnresolvedMerchant)
+      current <- priceValue(source, s"$pointer.current_price", c.downField("current_price").focus)
+        .flatMap {
+          case some @ Some(_) => Right(some)
+          case None           => priceValue(source, s"$pointer.price", c.downField("price").focus)
+        }
+      original <- priceValue(source, s"$pointer.original_price", c.downField("original_price").focus)
       from       <- instantAt(source, c, "valid_from", pointer)
       to         <- instantAt(source, c, "valid_to", pointer)
       _ <-
@@ -146,7 +166,14 @@ object FlippDecoders {
     } yield {
       // pre/post price text folds into the sale story (01.4); rawName is verbatim,
       // the bilingual split is normalization's job (02.5), so name stays empty here.
-      val saleStory = List(optStr(c, "pre_price_text"), optStr(c, "sale_story"), optStr(c, "post_price_text")).flatten
+      // `discount` (per-flyer only) is an integer whose units are NOT documented
+      // and were not verifiable from the response alone. It is preserved as
+      // opaque sale text — the same treatment "25 points" gets — rather than
+      // being read as a percentage and used to fabricate an original price,
+      // which would silently corrupt discount gating (05.1) and verdicts (07.3).
+      val discount  = c.downField("discount").focus.flatMap(_.asNumber).map(n => s"discount ${n.toString}")
+      val saleStory =
+        List(optStr(c, "pre_price_text"), optStr(c, "sale_story"), optStr(c, "post_price_text"), discount).flatten
       FlyerItem(
         sourceItemId = sourceItemId,
         flyerId = flyerId,
