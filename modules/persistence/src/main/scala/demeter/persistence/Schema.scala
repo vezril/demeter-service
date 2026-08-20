@@ -90,6 +90,29 @@ object Schema {
             raw_response_id bigint NOT NULL REFERENCES raw_response(id),
             UNIQUE (product_key, flyer_id, observed_at)
           )""",
+    // The watchlist itself (04.1). The DDL lives here so every migration is in one
+    // ordered place; the typed store lives in the watchlist module, which is the
+    // only layer that can see WatchItem. The CHECKs mirror WatchItem.of's
+    // validation, so a hand-written INSERT cannot create a watch the domain
+    // would reject.
+    sql"""CREATE TABLE IF NOT EXISTS watch_item (
+            id               text PRIMARY KEY,
+            label            text NOT NULL,
+            terms            text[] NOT NULL,
+            merchant_ids     int[] NOT NULL DEFAULT '{}',
+            max_price_cents  bigint,
+            require_sale     boolean NOT NULL DEFAULT false,
+            min_discount_pct int,
+            active           boolean NOT NULL DEFAULT true,
+            created_at       timestamptz NOT NULL DEFAULT now(),
+            CONSTRAINT watch_item_label_non_empty CHECK (btrim(label) <> ''),
+            CONSTRAINT watch_item_terms_non_empty CHECK (cardinality(terms) > 0),
+            CONSTRAINT watch_item_discount_range
+              CHECK (min_discount_pct IS NULL OR min_discount_pct BETWEEN 1 AND 100),
+            CONSTRAINT watch_item_max_price_non_negative
+              CHECK (max_price_cents IS NULL OR max_price_cents >= 0)
+          )""",
+    sql"""CREATE INDEX IF NOT EXISTS watch_item_active_idx ON watch_item (active)""",
     sql"""CREATE INDEX IF NOT EXISTS price_observation_history_idx
             ON price_observation (product_key, observed_at DESC)""",
     sql"""CREATE INDEX IF NOT EXISTS price_observation_window_idx

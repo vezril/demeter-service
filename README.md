@@ -83,6 +83,32 @@ startup with a specific message rather than failing three layers deep later.
 Secrets are read from the environment, never committed, and redacted in the
 startup config dump.
 
+### The watchlist
+
+Watches live in the `watch_item` table (created by the startup migration), not
+in config — so you can add or pause one without redeploying. An empty watchlist
+is legal but useless: the run still fetches, normalizes, and stores prices, it
+just alerts on nothing, and says so loudly at boot.
+
+```sql
+-- alert on milk under $3 that history agrees is genuinely a sale
+INSERT INTO watch_item (id, label, terms, max_price_cents, require_sale)
+VALUES ('milk-4l', 'Milk 4L', ARRAY['milk', 'lait'], 300, true);
+
+-- scoped to specific merchants, and only when it is 20%+ off
+INSERT INTO watch_item (id, label, terms, merchant_ids, min_discount_pct)
+VALUES ('coffee', 'Coffee', ARRAY['cafe', 'coffee'], ARRAY[2269, 4592], 20);
+
+-- pause one while you tune it, without losing its settings
+UPDATE watch_item SET active = false WHERE id = 'coffee';
+```
+
+`terms` are matched in either language after accent-folding (04.2/04.3), so
+`cafe` finds `café`. An empty `merchant_ids` means any merchant. The table's
+CHECK constraints mirror the domain rules, so a bad INSERT is rejected outright
+rather than surfacing later; anything the database permits but the domain still
+refuses is named individually in the startup log and skipped.
+
 ## Boundaries
 
 Personal-use, facts-only, no redistribution of flyer content. Undocumented

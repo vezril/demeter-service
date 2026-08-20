@@ -51,8 +51,11 @@ lazy val persistence = (project in file("modules/persistence"))
 lazy val watchlist = (project in file("modules/watchlist"))
   .settings(name := "demeter-watchlist")
   .settings(commonSettings)
-  .settings(libraryDependencies ++= Seq(cats))
-  .dependsOn(foundations, normalization)
+  // owns its own persistence, the same way pricehistory does: the WatchItem model
+  // lives here (04.1), so the store that reads it has to live here too — 03 sits
+  // below 04 and cannot see the type.
+  .settings(libraryDependencies ++= Seq(cats, catsEffect) ++ doobie)
+  .dependsOn(foundations, normalization, persistence)
 
 lazy val alerting = (project in file("modules/alerting"))
   .settings(name := "demeter-alerting")

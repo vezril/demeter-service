@@ -9,7 +9,7 @@ import demeter.alerting._
 import demeter.foundations._
 import demeter.ingestion._
 import demeter.persistence._
-import demeter.watchlist.WatchItem
+import demeter.watchlist.{DoobieWatchStore, WatchItem, WatchStore}
 import doobie.Transactor
 import doobie.hikari.HikariTransactor
 import org.http4s.ember.client.EmberClientBuilder
@@ -31,9 +31,9 @@ object Main extends IOApp {
 
         case Right(config) =>
           log.info(s"starting demeter-service\n${config.redactedDump}") *>
-            components(config).use { case (source, rawStore, observations, ledger, sink) =>
+            components(config).use { case (source, rawStore, observations, ledger, sink, watches) =>
               for {
-                watchlist <- loadWatchlist
+                watchlist <- loadWatchlist(watches, log)
                 run       <- DailyRun.create[IO](source, None, rawStore, observations, ledger, sink, config, watchlist)
                 _         <- IO.whenA(config.schedule.runOnStart)(executeOnce(run, log).void)
                 _         <- loop(run, log)
@@ -59,10 +59,24 @@ object Main extends IOApp {
       case Right(_) => IO.unit
     }).foreverM
 
-  /** TODO: source the watchlist from config/DB; empty until then so the service
-    * runs harmlessly rather than inventing watches.
+  /** The watchlist comes from the database (04.1 / the watch_item table).
+    *
+    * An empty watchlist is legal but useless — the run would match nothing — so
+    * it is called out loudly at boot rather than left for you to discover from
+    * a week of silent runs. Rows the domain rejects are named individually.
     */
-  private def loadWatchlist: IO[List[WatchItem]] = IO.pure(Nil)
+  private def loadWatchlist(store: WatchStore[IO], log: org.typelevel.log4cats.Logger[IO]): IO[List[WatchItem]] =
+    store.load.flatMap { loaded =>
+      val warnRejects = loaded.rejected.traverse_ { case (id, why) =>
+        log.error(s"watch '$id' is stored but invalid and will be skipped: $why")
+      }
+      val warnEmpty = IO.whenA(loaded.items.count(_.active) == 0)(
+        log.warn("no ACTIVE watches configured — the run will fetch and store prices but alert on nothing")
+      )
+      warnRejects *> warnEmpty *>
+        log.info(s"loaded ${loaded.items.count(_.active)} active watch(es) of ${loaded.items.size}") *>
+        IO.pure(loaded.items)
+    }
 
   private def loadConfig: IO[Either[List[ConfigError], Config]] =
     IO.delay(sys.env).map { env =>
@@ -96,7 +110,7 @@ object Main extends IOApp {
 
   private def components(
       config: Config
-  ): Resource[IO, (FlyerSource[IO], RawResponseStore[IO], ObservationStore[IO], FlyerLedger[IO], AlertSink[IO])] =
+  ): Resource[IO, (FlyerSource[IO], RawResponseStore[IO], ObservationStore[IO], FlyerLedger[IO], AlertSink[IO], WatchStore[IO])] =
     for {
       client <- EmberClientBuilder.default[IO].build
       xa     <- transactor(config)
@@ -104,7 +118,14 @@ object Main extends IOApp {
       policy <- Resource.eval(Random.scalaUtilRandom[IO].flatMap(implicit r => HttpPolicy.create[IO](config.http)))
       source = new FlippSource[IO](Http4sTransport[IO](client), policy, config.sources.flippBaseUrl)
       sink   = buildSink(config, client)
-    } yield (source, new DoobieRawResponseStore[IO](xa), new DoobieObservationStore[IO](xa), new DoobieFlyerLedger[IO](xa, config.run.flyerMaxAge), sink)
+    } yield (
+      source,
+      new DoobieRawResponseStore[IO](xa),
+      new DoobieObservationStore[IO](xa),
+      new DoobieFlyerLedger[IO](xa, config.run.flyerMaxAge),
+      sink,
+      new DoobieWatchStore[IO](xa),
+    )
 
   private def transactor(config: Config): Resource[IO, Transactor[IO]] =
     HikariTransactor.newHikariTransactor[IO](

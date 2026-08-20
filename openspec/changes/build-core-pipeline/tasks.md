@@ -89,3 +89,10 @@
 ## 12. Phase gate 3 (after 06–08)
 
 - [x] 12.1 PHASE GATE 3 SIGNED OFF (2026-08-20). End-to-end run green against fixture source + in-memory doubles; `sbt test` green repo-wide (285 with Postgres up, 269 with the @boundary suites cancelling cleanly); mutation gate green; README verified.
+
+## 13. Post-gate functionality
+
+- [x] 13.1 Watchlist loading (was: `loadWatchlist` returned Nil, so a real run alerted on nothing). Watches now live in a `watch_item` table with CHECK constraints mirroring 04.1's validation; `WatchStore` in the watchlist module (which gains a dependency on persistence, following the pricehistory precedent, since 03 cannot see WatchItem). Main loads at boot, names any domain-rejected rows, and warns loudly when no watch is active. 33 tests, @boundary against real Postgres.
+- [ ] 13.2 Alert dedup persistence — the `Ref` in DailyRun still resets on restart, so a mid-week restart re-alerts everything already sent.
+- [ ] 13.3 Scheduler — the cron string in ScheduleConfig is parsed and ignored; the loop is a fixed 24h sleep.
+- [ ] 13.4 MQTT sink — stubbed; only the HA webhook path is wired.
