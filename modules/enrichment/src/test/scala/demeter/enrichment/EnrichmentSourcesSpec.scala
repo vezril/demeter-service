@@ -1,6 +1,7 @@
 package demeter.enrichment
 
 import java.nio.charset.StandardCharsets
+import java.nio.file.{Files, Path, Paths}
 import java.time.Instant
 
 import scala.concurrent.duration._
@@ -15,9 +16,14 @@ import org.scalatest.funsuite.AnyFunSuite
 
 /** Specs 06.1–06.4 — enrichment sources against stub transports.
   *
-  * The @contract scenarios that need REAL captured responses are pending until
-  * the operator captures them (they need a PC Express key / Voilà session);
-  * see task 9.2. Everything testable without those fixtures is covered here.
+  * Voilà is tested against a REAL captured page (fixtures/voila_search.sample.html,
+  * 2026-08-20) and is the only enrichment source whose shape has been verified.
+  *
+  * PC Express and Canadian Tire are still written against assumed schemas that
+  * live verification has since falsified — see
+  * specs/06-enrichment/06.0-endpoint-verification.md. Their tests below prove
+  * the plumbing (headers, key handling, degradation), NOT that the decoders
+  * match reality. Neither should be enabled in a real run.
   */
 final class EnrichmentSourcesSpec extends AnyFunSuite {
 
@@ -29,21 +35,14 @@ final class EnrichmentSourcesSpec extends AnyFunSuite {
 
   private def bytes(s: String) = s.getBytes(StandardCharsets.UTF_8)
 
+  /** repo-root fixtures/, wherever sbt runs tests from */
+  private def fixture(name: String): Path =
+    List(Paths.get("fixtures", name), Paths.get("..", "..", "fixtures", name))
+      .find(Files.exists(_))
+      .getOrElse(sys.error(s"fixture not found: $name"))
+
   private def getStub(status: Int, body: String, log: Option[Ref[IO, List[String]]] = None): HttpTransport[IO] =
     (url, _) => log.fold(IO.unit)(_.update(_ :+ url)).as(Right(HttpResponse(status, bytes(body), "application/json")))
-
-  /** Voilà answers /sessions and /products/search differently, as the real backend does. */
-  private def voilaStub(
-      searchStatus: Int,
-      searchBody: String,
-      sessionStatus: Int = 200,
-      log: Option[Ref[IO, List[String]]] = None,
-  ): HttpTransport[IO] =
-    (url, _) =>
-      log.fold(IO.unit)(_.update(_ :+ url)).as {
-        if (url.contains("/sessions")) Right(HttpResponse(sessionStatus, bytes("""{"sessionId":"abc"}"""), "application/json"))
-        else Right(HttpResponse(searchStatus, bytes(searchBody), "application/json"))
-      }
 
   private def postStub(
       status: Int,
@@ -103,36 +102,87 @@ final class EnrichmentSourcesSpec extends AnyFunSuite {
     assert(src.headers("maxi", Locale.EnCa)("X-Apikey") == "FROM-CONFIG")
   }
 
-  // --- 06.3 Voilà ---
+  // --- 06.3 Voilà (rebuilt 2026-08-20 against the verified shape) ---
 
-  test("a session is established before searching") {
-    val urls = Ref.of[IO, List[String]](Nil).unsafeRunSync()
-    val src  = VoilaSource.create[IO](VoilaConfig(), voilaStub(200, """{"products":[]}""", log = Some(urls)), policy).unsafeRunSync()
-    src.lookup("lait", postal, Locale.FrCa).unsafeRunSync()
-    val seen = urls.get.unsafeRunSync()
-    assert(seen.head.contains("/sessions"))
-    assert(seen(1).contains("/products/search"))
+  test("a captured search page decodes to enriched prices (@contract)") {
+    val html   = new String(java.nio.file.Files.readAllBytes(fixture("voila_search.sample.html")), StandardCharsets.UTF_8)
+    val Right(prices) = VoilaSource.decodePage(html, MerchantId(4592), SourceName("voila"), Instant.EPOCH)
+
+    assert(prices.size == 4)
+    assert(prices.forall(_.provenance == PriceProvenance.OnlineReference))
+
+    val natrel = prices.find(_.name.anyForm.exists(_.startsWith("Natrel 2%"))).get
+    assert(natrel.regularPrice.contains(Money.cents(569)))
+    assert(natrel.salePrice.isEmpty, "not on sale: current IS the regular price")
+    // "fop.price.per.100ml" at $0.28 becomes $2.80/L
+    assert(natrel.unitPrice.map(_.price.cents).contains(280L))
+    assert(natrel.unitPrice.map(_.per).contains(StdUnit.PerLitre))
   }
 
-  test("an expired session is re-established once, and a second 401 degrades the source") {
-    val attempts = Ref.of[IO, Int](0).unsafeRunSync()
-    // sessions always succeed; searches always 401
-    val transport: HttpTransport[IO] = (url, _) =>
-      if (url.contains("/sessions")) IO.pure(Right(HttpResponse(200, bytes("""{"sessionId":"s"}"""), "application/json")))
-      else attempts.update(_ + 1).as(Right(HttpResponse(401, bytes("expired"), "application/json")))
+  test("a product on sale reports the regular price as the baseline, not the sale price") {
+    val html   = new String(java.nio.file.Files.readAllBytes(fixture("voila_search.sample.html")), StandardCharsets.UTF_8)
+    val Right(prices) = VoilaSource.decodePage(html, MerchantId(4592), SourceName("voila"), Instant.EPOCH)
 
-    val src    = VoilaSource.create[IO](VoilaConfig(), transport, policy).unsafeRunSync()
-    val result = src.lookup("lait", postal, Locale.FrCa).unsafeRunSync()
-    assert(result == Left(DealWatchError.HttpStatus(401, VoilaConfig().baseUrl + "?term=lait&limit=20&offset=0&sort=favorite")))
-    assert(attempts.get.unsafeRunSync() == 2) // original + exactly one retry
+    // this is the entire point of enrichment: 07.3 needs the REGULAR price to
+    // judge whether a flyer's "sale" is real
+    val onSale = prices.filter(_.salePrice.isDefined)
+    assert(onSale.nonEmpty, "the fixture includes on-sale products")
+    onSale.foreach { p =>
+      assert(p.regularPrice.exists(r => p.salePrice.exists(_.cents < r.cents)), s"sale must undercut regular: $p")
+    }
+    val lactose = prices.find(_.name.anyForm.exists(_.contains("Natrel Plus"))).get
+    assert(lactose.regularPrice.contains(Money.cents(899)))
+    assert(lactose.salePrice.contains(Money.cents(699)))
   }
 
-  test("Voila prices are marked as an online reference, not flyer truth") {
-    val body = """{"products":[{"name":"Lait 4 L","price":{"current":{"amount":5.49}}}]}"""
-    val src  = VoilaSource.create[IO](VoilaConfig(), voilaStub(200, body), policy).unsafeRunSync()
+  test("the unit basis is converted, and an unrecognised basis yields no unit price rather than a wrong one") {
+    assert(VoilaSource.unitBasisOf("fop.price.per.100ml").contains((StdUnit.PerLitre, BigDecimal(10))))
+    assert(VoilaSource.unitBasisOf("fop.price.per.100g").contains((StdUnit.PerKg, BigDecimal(10))))
+    assert(VoilaSource.unitBasisOf("fop.price.per.kg").contains((StdUnit.PerKg, BigDecimal(1))))
+    assert(VoilaSource.unitBasisOf("fop.price.per.furlong").isEmpty, "a guessed basis is worse than none")
+  }
+
+  test("the search URL goes straight to the redirect target") {
+    assert(VoilaSource.searchUrl("https://voila.ca", "lait") == "https://voila.ca/search?q=lait")
+    assert(VoilaSource.searchUrl("https://voila.ca", "ground beef").endsWith("q=ground%20beef"))
+  }
+
+  test("a page without the embedded state is a decode error naming what was missing") {
+    val result = VoilaSource.decodePage("<html><body>nothing here</body></html>", MerchantId(4592), SourceName("voila"), Instant.EPOCH)
+    assert(result.swap.exists(_.isInstanceOf[DealWatchError.Decode]))
+    assert(result.swap.exists(_.context("pointer") == "window.__INITIAL_STATE__"))
+  }
+
+  test("an individual unparseable product is dropped, not fatal to the lookup") {
+    val html = """<script>window.__INITIAL_STATE__ = {"data":{"products":{"productEntities":{
+      "a":{"name":"Good Milk 2 L","price":{"current":{"amount":"4.99","currency":"CAD"}}},
+      "b":{"price":{"current":{"amount":"1.99","currency":"CAD"}}}
+    }}}};</script>"""
+    val Right(prices) = VoilaSource.decodePage(html, MerchantId(4592), SourceName("voila"), Instant.EPOCH)
+    assert(prices.size == 1, "the nameless entity is dropped, the good one survives")
+    assert(prices.head.name.anyForm.contains("Good Milk 2 L"))
+  }
+
+  test("a non-CAD amount is refused rather than silently mixed") {
+    val html = """<script>window.__INITIAL_STATE__ = {"data":{"products":{"productEntities":{
+      "a":{"name":"Imported Thing","price":{"current":{"amount":"4.99","currency":"USD"}}}
+    }}}};</script>"""
+    val Right(prices) = VoilaSource.decodePage(html, MerchantId(4592), SourceName("voila"), Instant.EPOCH)
+    assert(prices.head.regularPrice.isEmpty, "currencies must never silently mix (00.1)")
+  }
+
+  test("an end-to-end lookup maps the page through the transport") {
+    val html = new String(java.nio.file.Files.readAllBytes(fixture("voila_search.sample.html")), StandardCharsets.UTF_8)
+    val src  = new VoilaSource[IO](VoilaConfig(), getStub(200, html), policy)
     val Right(prices) = src.lookup("lait", postal, Locale.FrCa).unsafeRunSync()
-    assert(prices.head.provenance == PriceProvenance.OnlineReference)
-    assert(prices.head.regularPrice.contains(Money.cents(549)))
+    assert(prices.size == 4)
+  }
+
+  test("a transport failure stays a typed, retriable value") {
+    val src    = new VoilaSource[IO](VoilaConfig(), getStub(503, "down"), policy)
+    val result = src.lookup("lait", postal, Locale.FrCa).unsafeRunSync()
+    assert(result == Left(DealWatchError.HttpStatus(503, VoilaSource.searchUrl("https://voila.ca", "lait"))))
+    assert(result.swap.exists(_.retriable))
   }
 
   // --- 06.4 Canadian Tire ---
@@ -188,17 +238,10 @@ final class EnrichmentSourcesSpec extends AnyFunSuite {
   }
 
   test("an enrichment failure is a typed value the run can continue past") {
-    val src    = VoilaSource.create[IO](VoilaConfig(), voilaStub(503, "down"), policy).unsafeRunSync()
+    val src    = new VoilaSource[IO](VoilaConfig(), getStub(503, "down"), policy)
     val result = src.lookup("lait", postal, Locale.FrCa).unsafeRunSync()
     assert(result.isLeft)
     // non-blocking by construction: the caller gets a value, not an exception
     assert(result.swap.exists(_.retriable))
-  }
-
-  test("a transient outage while establishing the session stays retriable, not a synthetic 401") {
-    val src    = VoilaSource.create[IO](VoilaConfig(), voilaStub(200, "{}", sessionStatus = 503), policy).unsafeRunSync()
-    val result = src.ensureSession.unsafeRunSync()
-    assert(result == Left(DealWatchError.HttpStatus(503, VoilaConfig().sessionUrl)))
-    assert(result.swap.exists(_.retriable), "a 503 must not be mistaken for a rejected session")
   }
 }
