@@ -47,7 +47,13 @@ final case class SinkConfig(
     order: List[String] = List("home-assistant", "ntfy", "email"),
 )
 
-final case class ScheduleConfig(cron: String = "0 6 * * *", runOnStart: Boolean = false)
+final case class ScheduleConfig(
+    cron: String = "0 6 * * *",
+    // "06:00" is a local, wall-clock concern — as is a flyer's validity window —
+    // so the zone is explicit rather than inherited from whatever the host is set to.
+    zone: java.time.ZoneId = java.time.ZoneId.of("America/Montreal"),
+    runOnStart: Boolean = false,
+)
 
 final case class StorageConfig(
     jdbcUrl: String = "jdbc:postgresql://localhost:5432/demeter",
@@ -88,6 +94,7 @@ final case class Config(
       s"http.maxAttempts=${http.maxAttempts}",
       s"history.windowDays=${history.window.toDays}",
       s"sinks.order=${sinks.order.mkString(",")}",
+      s"schedule=${DailySchedule.parse(schedule.cron, schedule.zone).map(_.describe).getOrElse(schedule.cron)}",
       s"storage.jdbcUrl=${storage.jdbcUrl}",
       s"storage.password=${storage.password.toString}",
       s"run.flyerConcurrency=${run.flyerConcurrency}",
@@ -104,6 +111,8 @@ object ConfigError {
   case object EmptySinkChain
       extends ConfigError("the alert sink chain is empty — alerts would have nowhere to go")
   final case class BadValue(field: String, why: String) extends ConfigError(s"invalid $field: $why")
+  final case class BadSchedule(cron: String, why: String)
+      extends ConfigError(s"invalid schedule.cron '$cron': $why")
 }
 
 object Config {
@@ -142,7 +151,15 @@ object Config {
         ),
       ).flatten
 
-    val errors = enrichmentErrors ++ fallbackErrors ++ sinkErrors ++ valueErrors
+    // The schedule is parsed at boot, not at first fire: an unrunnable cron
+    // must stop startup rather than surface after the service has sat idle
+    // looking healthy for a day (08.4).
+    val scheduleErrors =
+      DailySchedule.parse(config.schedule.cron, config.schedule.zone).left.toSeq
+        .map(why => ConfigError.BadSchedule(config.schedule.cron, why))
+        .toList
+
+    val errors = enrichmentErrors ++ fallbackErrors ++ sinkErrors ++ valueErrors ++ scheduleErrors
     if (errors.isEmpty) Right(config) else Left(errors)
   }
 

@@ -68,6 +68,26 @@ final class ConfigSpec extends AnyFunSuite {
     assert(Config.validate(broken).swap.toOption.get.size >= 3)
   }
 
+  test("an unrunnable schedule stops startup instead of surfacing a day later") {
+    // the old loop ignored cron entirely; a typo now has to fail at boot, not
+    // leave the service sitting idle looking healthy
+    val errors = Config.validate(config().copy(schedule = ScheduleConfig(cron = "every morning"))).swap.toOption.get
+    assert(errors.exists(_.message.contains("schedule.cron")))
+    assert(errors.exists(_.message.contains("5 cron fields")))
+  }
+
+  test("a schedule this service cannot honour is refused rather than approximated") {
+    val monthly = Config.validate(config().copy(schedule = ScheduleConfig(cron = "0 6 1 * *"))).swap.toOption.get
+    assert(monthly.exists(_.message.contains("day-of-month")))
+  }
+
+  test("a valid schedule passes and is rendered readably in the dump") {
+    val c = config().copy(schedule = ScheduleConfig(cron = "30 18 * * 4"))
+    assert(Config.validate(c).isRight)
+    assert(c.redactedDump.contains("18:30"))
+    assert(c.redactedDump.contains("thu"))
+  }
+
   test("a config dump redacts secrets but keeps diagnostics readable") {
     val dumped = config(enrichment = EnrichmentConfig(pcExpressEnabled = true, pcExpressApiKey = Some(Secret("SUPER-SECRET"))))
       .copy(storage = StorageConfig(password = Secret("hunter2")))

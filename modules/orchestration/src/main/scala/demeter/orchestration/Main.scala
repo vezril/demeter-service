@@ -36,7 +36,10 @@ object Main extends IOApp {
                 watchlist <- loadWatchlist(watches, log)
                 run       <- DailyRun.create[IO](source, None, rawStore, observations, ledger, sink, alertLedger, config, watchlist)
                 _         <- IO.whenA(config.schedule.runOnStart)(executeOnce(run, log).void)
-                _         <- loop(run, log)
+                // validated at boot, so this cannot fail here
+                schedule   = DailySchedule.parse(config.schedule.cron, config.schedule.zone)
+                               .getOrElse(throw new IllegalStateException("schedule passed validation but will not parse"))
+                _         <- loop(run, log, schedule)
               } yield ExitCode.Success
             }
       }
@@ -50,14 +53,28 @@ object Main extends IOApp {
         alarms.traverse_(a => log.warn(s"DRIFT ALARM: ${a.message}"))
     }
 
-  /** v1 scheduling is a simple fixed interval; the cron string in config is the
-    * hook for a real scheduler without touching the run itself.
+  /** Sleeps until the next scheduled wall-clock firing, recomputed from the
+    * clock each time. Accumulating a fixed interval instead would let a slow
+    * run drag the schedule later every day, and would tie firing to process
+    * start rather than to a time of day.
     */
-  private def loop(run: DailyRun[IO], log: org.typelevel.log4cats.Logger[IO]): IO[Unit] =
-    (IO.sleep(24.hours) *> executeOnce(run, log).attempt.flatMap {
-      case Left(e)  => log.error(s"run failed: $e")
-      case Right(_) => IO.unit
-    }).foreverM
+  private def loop(
+      run: DailyRun[IO],
+      log: org.typelevel.log4cats.Logger[IO],
+      schedule: DailySchedule,
+  ): IO[Unit] =
+    (for {
+      now  <- IO.realTimeInstant
+      next  = schedule.nextAfter(now)
+      wait  = math.max(0L, next.toEpochMilli - now.toEpochMilli).millis
+      _    <- log.info(s"next run at $next (in ${wait.toMinutes} min)")
+      _    <- IO.sleep(wait)
+      _    <- executeOnce(run, log).attempt.flatMap {
+        // a failed run must not break the loop — tomorrow still gets a turn
+        case Left(e)  => log.error(s"run failed: $e")
+        case Right(_) => IO.unit
+      }
+    } yield ()).foreverM
 
   /** The watchlist comes from the database (04.1 / the watch_item table).
     *
@@ -92,6 +109,12 @@ object Main extends IOApp {
               enrichment = EnrichmentConfig(
                 pcExpressEnabled = env.get("DEMETER_PCEXPRESS_ENABLED").contains("true"),
                 pcExpressApiKey = env.get("DEMETER_PCEXPRESS_KEY").map(Secret.apply),
+              ),
+              schedule = ScheduleConfig(
+                cron = env.getOrElse("DEMETER_SCHEDULE_CRON", "0 6 * * *"),
+                zone = env.get("DEMETER_SCHEDULE_ZONE")
+                  .flatMap(z => scala.util.Try(java.time.ZoneId.of(z)).toOption)
+                  .getOrElse(java.time.ZoneId.of("America/Montreal")),
               ),
               sinks = SinkConfig(
                 haWebhookUrl = env.get("DEMETER_HA_WEBHOOK"),

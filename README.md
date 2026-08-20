@@ -78,10 +78,32 @@ startup with a specific message rather than failing three layers deep later.
 | `DEMETER_JDBC_URL` / `DEMETER_DB_USER` / `DEMETER_DB_PASSWORD` | Postgres connection |
 | `DEMETER_HA_WEBHOOK` / `DEMETER_HA_MQTT_TOPIC` | Home Assistant alert target |
 | `DEMETER_NTFY_URL` | fallback sink |
+| `DEMETER_SCHEDULE_CRON` | when to run, default `0 6 * * *` (06:00 daily) |
+| `DEMETER_SCHEDULE_ZONE` | schedule timezone, default `America/Montreal` |
 | `DEMETER_PCEXPRESS_ENABLED` / `DEMETER_PCEXPRESS_KEY` | optional enrichment |
 
 Secrets are read from the environment, never committed, and redacted in the
 startup config dump.
+
+### Scheduling
+
+`schedule.cron` supports a time of day, optionally restricted to weekdays:
+`minute hour * * day-of-week`. Day-of-month and month must be `*`; anything else
+is refused at boot rather than silently approximated, because supporting a
+fraction of cron while accepting all of its syntax is worse than not accepting
+cron at all.
+
+```
+0 6 * * *     every day at 06:00
+30 18 * * 4   Thursdays at 18:30 — when flyers tend to drop
+0 7 * * 1-5   weekdays at 07:00
+```
+
+The time is wall-clock in `schedule.zone`, and the next firing is recomputed
+from the clock each cycle, so a slow run never drags the schedule later and a
+restart lands back on the same slot. DST is handled: a firing inside a
+spring-forward gap still happens, and a repeated fall-back hour does not fire
+twice.
 
 ### The watchlist
 
