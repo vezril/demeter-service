@@ -81,6 +81,10 @@ lazy val pricehistory = (project in file("modules/pricehistory"))
 lazy val orchestration = (project in file("modules/orchestration"))
   .settings(name := "demeter-orchestration")
   .settings(commonSettings)
+  // Replay is a second entry point, which makes plain `run` ambiguous; name the
+  // service explicitly so `run` and any packaging both mean the daily job.
+  // Replay stays reachable via runMain.
+  .settings(Compile / mainClass := Some("demeter.orchestration.Main"))
   .settings(libraryDependencies ++= Seq(cats, catsEffect, pureconfig, log4cats, logback))
   .dependsOn(
     foundations, ingestion, normalization, persistence,
