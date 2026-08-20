@@ -39,7 +39,7 @@
 
 ## 5. Phase gate 1 (after 00–03)
 
-- [ ] 5.1 `sbt test` fully green across foundations/ingestion/normalization/persistence — persistence now verified against real Postgres (20/20, nothing cancelled). Mutation gate green on both @pure modules (97.14% / 87.43%). AWAITING human sign-off.
+- [x] 5.1 PHASE GATE 1 SIGNED OFF (2026-08-20). `sbt test` green across foundations/ingestion/normalization/persistence; persistence verified against real Postgres (20/20, nothing cancelled); mutation gate green on both @pure modules (97.14% / 87.43%).
 
 ## 6. Watchlist (specs/04-watchlist, modules/watchlist)
 
@@ -65,7 +65,7 @@
 ## 9. Enrichment (specs/06-enrichment, modules/enrichment)
 
 - [x] 9.1 EnrichmentSource interface + EnrichedPrice (06.1); non-blocking-failure semantics
-- [ ] 9.2 Capture live fixtures for PC Express / Voilà / CT (operator step — needs key/session); until captured, tag @contract tests pending
+- [ ] 9.2 DEFERRED by decision (2026-08-20): capture live PC Express / Voila / CT fixtures only after the core functionality is fleshed out. Until then those three adapters run against stubs and their endpoint schemas remain unverified — do not rely on enrichment in a real run.
 - [x] 9.3 PC Express source (06.2): Site-Banner per merchant, X-Apikey from config only, 401 degrades source with operator signal
 - [x] 9.4 Voilà source (06.3): establish-session step, one 401 retry then degrade, online-reference provenance
 - [x] 9.5 Canadian Tire source (06.4): serial + stricter rate limit, validity-window cache, enrichment-regular-overrides-flyer-claim
@@ -88,4 +88,4 @@
 
 ## 12. Phase gate 3 (after 06–08)
 
-- [ ] 12.1 End-to-end run green; `sbt test` green repo-wide (285 passing, 0 cancelled) INCLUDING the Postgres @boundary suites; mutation gate green; README verified. OUTSTANDING: enrichment @contract fixtures (9.2 — needs operator keys), human sign-off.
+- [x] 12.1 PHASE GATE 3 SIGNED OFF (2026-08-20). End-to-end run green against fixture source + in-memory doubles; `sbt test` green repo-wide (285 with Postgres up, 269 with the @boundary suites cancelling cleanly); mutation gate green; README verified.
