@@ -65,7 +65,7 @@
 ## 9. Enrichment (specs/06-enrichment, modules/enrichment)
 
 - [x] 9.1 EnrichmentSource interface + EnrichedPrice (06.1); non-blocking-failure semantics
-- [ ] 9.2 DEFERRED by decision (2026-08-20): capture live PC Express / Voila / CT fixtures only after the core functionality is fleshed out. Until then those three adapters run against stubs and their endpoint schemas remain unverified — do not rely on enrichment in a real run.
+- [ ] 9.2 STARTED 2026-08-20, blocked on a decision. Verified all three enrichment endpoints live (see specs/06-enrichment/06.0-endpoint-verification.md). Result: ALL THREE assumed schemas are falsified. PC Express — no api.pcexpress.ca call happens at all and maxi.ca runs Akamai Bot Manager; not pursued. Voila — no bot management and excellent data (incl. unit prices), but the real paths are /api/search/v1/* keyed on a regionId UUID, and the priced list is server-rendered, so an adapter would be an HTML scraper rather than the JSON client 06.3 specifies. Canadian Tire — real credential-free JSON API at /api/v1/search/v2/search?q=&store=, envelope nothing like 06.4 assumed, but the site also runs Akamai. No fixtures captured; the decoders as written target schemas that do not exist. Enrichment must stay disabled in a real run.
 - [x] 9.3 PC Express source (06.2): Site-Banner per merchant, X-Apikey from config only, 401 degrades source with operator signal
 - [x] 9.4 Voilà source (06.3): establish-session step, one 401 retry then degrade, online-reference provenance
 - [x] 9.5 Canadian Tire source (06.4): serial + stricter rate limit, validity-window cache, enrichment-regular-overrides-flyer-claim
