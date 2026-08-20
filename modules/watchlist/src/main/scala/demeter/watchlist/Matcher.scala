@@ -27,6 +27,24 @@ final case class MatcherConfig(
       * in long names from real ones without flattening normal grocery naming.
       */
     lengthDampening: Double = 0.5,
+    /** Shortest token the fuzzy fallback will consider, on BOTH sides.
+      *
+      * Jaro-Winkler cannot distinguish a spelling variant from a different short
+      * word, because one character is a large fraction of a short token. Real
+      * scores from live data:
+      *
+      *   yogourt ~ yoghurt   0.933   the variant this fallback exists for
+      *   butter  ~ butt      0.933   "BONELESS PORK SHOULDER BUTT"
+      *   butter  ~ better    0.900   "Save money, live better"
+      *
+      * The wanted match and the unwanted one score IDENTICALLY, so no threshold
+      * separates them — 14 of 83 butter alerts in one real run were this. Length
+      * does separate them: at 7, `yogourt` still matches and `butter` stops
+      * fuzzing entirely. The cost is that short plurals ("beurre"/"beurres") no
+      * longer match fuzzily and need their own term, which is explicit and
+      * cheap. 0 disables the rule.
+      */
+    minFuzzyLength: Int = 7,
 )
 
 final case class TextMatch(term: String, textScore: Double)
@@ -52,13 +70,25 @@ object Matcher {
         // every term token must be covered by some form token: exact, or JW >= threshold
         val quality = termTokens.map { tt =>
           if (tokens.contains(tt)) Some(1.0)
-          else tokens.map(jaroWinkler(tt, _)).maxOption.filter(_ >= config.fuzzyThreshold)
+          else
+            tokens
+              .filter(canFuzzyMatch(tt, _, config))
+              .map(jaroWinkler(tt, _))
+              .maxOption
+              .filter(_ >= config.fuzzyThreshold)
         }
         if (quality.forall(_.isDefined))
           Some((quality.flatten.sum / quality.size) * shareOfName(termTokens.size, tokens.size, config))
         else None
       }.maxOption.map(TextMatch(term, _))
   }
+
+  /** Whether two tokens are long enough for Jaro-Winkler to mean anything.
+    * Exact containment is unaffected — this gates only the fuzzy fallback.
+    */
+  def canFuzzyMatch(term: String, candidate: String, config: MatcherConfig = MatcherConfig()): Boolean =
+    config.minFuzzyLength <= 0 ||
+      (term.length >= config.minFuzzyLength && candidate.length >= config.minFuzzyLength)
 
   /** How much of the item name the term accounts for, dampened.
     *

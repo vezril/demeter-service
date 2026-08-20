@@ -65,6 +65,34 @@ final class MatcherSpec extends AnyFunSuite {
     assert(Matcher.matchItem(watch(List("cafe")), obs(List("cafe instant"))).isDefined, "cafe")
   }
 
+  test("short tokens do not fuzzy-match, because Jaro-Winkler cannot tell them apart") {
+    // butter~butt and yogourt~yoghurt BOTH score 0.933: no threshold separates
+    // the wanted variant from the unwanted word, but length does
+    assert(Matcher.matchItem(watch(List("butter")), obs(List("boneless pork shoulder butt"))).isEmpty)
+    assert(Matcher.matchItem(watch(List("butter")), obs(List("save money live better"))).isEmpty)
+    // the case the fallback exists for still works
+    assert(Matcher.matchItem(watch(List("yogourt")), obs(List("greek yoghurt"))).isDefined)
+  }
+
+  test("the length rule gates only fuzzy matching, never exact containment") {
+    // "cafe" is 4 characters — well under the floor — and must still match exactly
+    assert(Matcher.matchItem(watch(List("cafe")), obs(List("cafe instant"))).isDefined)
+    assert(Matcher.matchItem(watch(List("cafe")), obs(List("café instantané"))).isDefined)
+    assert(Matcher.matchItem(watch(List("milk")), obs(List("natrel milk"))).isDefined)
+    assert(Matcher.matchItem(watch(List("butter")), obs(List("lactantia butter"))).isDefined)
+  }
+
+  test("the floor applies to both sides, and is a knob") {
+    val cfg = MatcherConfig()
+    assert(!Matcher.canFuzzyMatch("butter", "butt", cfg), "short candidate")
+    assert(!Matcher.canFuzzyMatch("butt", "butter", cfg), "short term")
+    assert(Matcher.canFuzzyMatch("yogourt", "yoghurt", cfg))
+
+    val off = MatcherConfig(minFuzzyLength = 0)
+    assert(Matcher.canFuzzyMatch("butter", "butt", off), "0 disables the rule")
+    assert(Matcher.matchItem(watch(List("butter")), obs(List("pork shoulder butt")), off).isDefined)
+  }
+
   test("a near-miss that shares only a common word does not match") {
     assert(Matcher.matchItem(watch(List("chicken breast")), obs(List("chicken broth"))).isEmpty)
   }
