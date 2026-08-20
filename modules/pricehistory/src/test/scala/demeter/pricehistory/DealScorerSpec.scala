@@ -64,6 +64,32 @@ final class DealScorerSpec extends AnyFunSuite {
     assert(!verdict.isNotableOrBetter)
   }
 
+  test("thin history cannot support a NEGATIVE claim either") {
+    // The failure this prevents: on a first run every product has one
+    // observation, so every verdict came back "not actually a deal". Combined
+    // with requireSale that suppresses every alert for weeks while the service
+    // looks perfectly healthy.
+    val verdict = DealScorer.scoreDeal(obs(Some(300L)), stats(Some(300L), Some(300L), pricedN = 1))
+    assert(verdict == DealVerdict.Unknown, "one data point is not evidence of anything")
+    assert(!verdict.isNotableOrBetter, "and Unknown still does not pass requireSale")
+  }
+
+  test("enrichment lets a thin history judge negatively, because the baseline is real") {
+    // a retailer's actual regular price is a baseline no matter how little
+    // history we hold
+    val verdict = DealScorer.scoreDeal(
+      obs(Some(999L)),
+      stats(None, None, pricedN = 0),
+      enrichment = Some(DealScorer.EnrichmentBaseline(Some(Money.cents(999)))),
+    )
+    assert(verdict == DealVerdict.AtOrAboveUsual)
+  }
+
+  test("once history is deep enough, a negative verdict is allowed again") {
+    val verdict = DealScorer.scoreDeal(obs(Some(300L)), stats(Some(300L), Some(250L), pricedN = 8))
+    assert(verdict == DealVerdict.AtOrAboveUsual)
+  }
+
   test("thin history never yields an over-confident best-ever") {
     val verdict = DealScorer.scoreDeal(obs(Some(180L)), stats(Some(300L), Some(200L), pricedN = 2))
     assert(verdict == DealVerdict.Notable)

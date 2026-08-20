@@ -123,9 +123,11 @@ is legal but useless: the run still fetches, normalizes, and stores prices, it
 just alerts on nothing, and says so loudly at boot.
 
 ```sql
--- alert on milk under $3 that history agrees is genuinely a sale
-INSERT INTO watch_item (id, label, terms, max_price_cents, require_sale)
-VALUES ('milk-4l', 'Milk 4L', ARRAY['milk', 'lait'], 300, true);
+-- alert on milk under $3 that history agrees is genuinely a sale.
+-- require_sale defaults to true; set it false to alert on every match, which
+-- on a real flyer week means hundreds of alerts per watch.
+INSERT INTO watch_item (id, label, terms, max_price_cents)
+VALUES ('milk-4l', 'Milk 4L', ARRAY['milk', 'lait'], 300);
 
 -- scoped to specific merchants, and only when it is 20%+ off
 INSERT INTO watch_item (id, label, terms, merchant_ids, min_discount_pct)

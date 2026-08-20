@@ -31,8 +31,12 @@ final class DailyRunSpec extends AnyFunSuite {
     run = RunConfig(flyerConcurrency = 3),
   )
 
+  // requireSale is explicitly OFF here: these tests exercise the pipeline's
+  // mechanics — fan-out, idempotency, dedup, delivery — not deal quality. With
+  // it on (the production default) a first run holds no history, every verdict
+  // is honestly Unknown, and nothing is delivered, which would test nothing.
   private val milkWatch =
-    WatchItem.of(WatchId("w-milk"), "Milk", List("milk", "lait")).toOption.get
+    WatchItem.of(WatchId("w-milk"), "Milk", List("milk", "lait"), requireSale = false).toOption.get
 
   private def flyer(id: Long, merchant: Int = 100): Flyer =
     Flyer.of(FlyerId(id), MerchantId(merchant), "Weekly", from, to, postal, Locale.EnCa).toOption.get

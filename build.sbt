@@ -12,6 +12,12 @@ ThisBuild / scalacOptions ++= Seq(
   "-Ywarn-value-discard"
 )
 
+// The @boundary suites in persistence, watchlist, and alerting all talk to the
+// SAME docker-compose Postgres, truncating and migrating it. sbt runs projects
+// in parallel by default, so without this they race each other's DDL and the
+// failures look like flakes rather than the setup problem they are.
+Global / concurrentRestrictions += Tags.limit(Tags.Test, 1)
+
 // Common settings every module shares.
 lazy val commonSettings = Seq(
   libraryDependencies ++= Seq(

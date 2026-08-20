@@ -102,7 +102,7 @@ object Schema {
             terms            text[] NOT NULL,
             merchant_ids     int[] NOT NULL DEFAULT '{}',
             max_price_cents  bigint,
-            require_sale     boolean NOT NULL DEFAULT false,
+            require_sale     boolean NOT NULL DEFAULT true,
             min_discount_pct int,
             active           boolean NOT NULL DEFAULT true,
             created_at       timestamptz NOT NULL DEFAULT now(),
@@ -114,6 +114,9 @@ object Schema {
               CHECK (max_price_cents IS NULL OR max_price_cents >= 0)
           )""",
     sql"""CREATE INDEX IF NOT EXISTS watch_item_active_idx ON watch_item (active)""",
+    // New watches default to requiring a genuine sale; existing rows keep
+    // whatever was chosen for them.
+    sql"ALTER TABLE watch_item ALTER COLUMN require_sale SET DEFAULT true",
     // What has already been alerted (05.2). The primary key IS the dedup key —
     // watch + product + the flyer's validity window — so the "same deal, same
     // window, only once" rule is enforced by the schema, not just by code.

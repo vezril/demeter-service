@@ -67,11 +67,22 @@ object DealScorer {
           case Some(base) =>
             val thinHistory = stats.pricedN < thresholds.minHistoryN
             val pctBelow    = percentBelow(price, base)
+            // Enrichment supplies a retailer's actual regular price, which is a
+            // real baseline regardless of how much history we hold. Without it,
+            // a thin sample cannot support ANY confident claim — including a
+            // negative one.
+            val canJudgeOnThinHistory = enrichedRegular.isDefined
 
             if (!thinHistory && stats.min.exists(price.cents <= _.cents))
               DealVerdict.BestEver(weeksOf(stats))
             else if (pctBelow >= thresholds.belowUsualPct)
-              if (thinHistory) DealVerdict.Notable else DealVerdict.BelowUsual(pctBelow)
+              if (thinHistory && !canJudgeOnThinHistory) DealVerdict.Notable
+              else DealVerdict.BelowUsual(pctBelow)
+            // "not actually a deal" is a claim, and one or two observations
+            // cannot support it. Saying Unknown here is what keeps requireSale
+            // from silently suppressing every alert for the weeks it takes
+            // history to accumulate.
+            else if (thinHistory && !canJudgeOnThinHistory) DealVerdict.Unknown
             else if (price.cents >= base.cents) DealVerdict.AtOrAboveUsual
             else DealVerdict.Notable
         }

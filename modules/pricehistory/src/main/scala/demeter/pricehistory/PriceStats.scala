@@ -65,6 +65,17 @@ object RollingStats {
     basisWeight * confidenceWeight * provenanceWeight
   }
 
+  /** History with the observation under judgement removed.
+    *
+    * `observationsFor` returns everything stored for a product key, which
+    * includes the row being scored. Left in, the baseline contains the very
+    * price it is meant to judge — on a first run, where 16,827 of 17,293
+    * products had exactly one observation, that made every item its own median
+    * and every verdict "not actually a deal".
+    */
+  def baselineFor(subject: PriceObservation, history: List[HistoryPoint]): List[HistoryPoint] =
+    history.filterNot(_.observation.sameRecordAs(subject))
+
   def rollingStats(key: ProductKey, points: List[HistoryPoint], window: Duration, now: Instant): PriceStats = {
     val cutoff   = now.minus(window)
     val inWindow = points.filter(p => !p.observation.observedAt.isBefore(cutoff))

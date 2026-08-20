@@ -39,7 +39,10 @@ object WatchItem {
       terms: List[String],
       merchants: Set[MerchantId] = Set.empty,
       maxPrice: Option[Money] = None,
-      requireSale: Boolean = false,
+      // Default ON: without it every match alerts. A first real run produced
+      // 384 alerts from three watches, which is the "you mute it in a week"
+      // outcome 05.1 exists to avoid.
+      requireSale: Boolean = true,
       minDiscountPct: Option[Int] = None,
       active: Boolean = true,
   ): Either[InvalidWatch, WatchItem] = {

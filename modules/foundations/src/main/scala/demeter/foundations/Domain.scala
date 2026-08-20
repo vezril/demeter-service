@@ -131,4 +131,10 @@ final case class PriceObservation(
     * when we cannot tell what language its name is in.
     */
   def confidence: Confidence = priceConfidence.min(matchConfidence)
+
+  /** Same stored row, by the triple 03.1 makes unique. Used to keep an
+    * observation out of the history it is being judged against.
+    */
+  def sameRecordAs(other: PriceObservation): Boolean =
+    productKey == other.productKey && flyerId == other.flyerId && observedAt == other.observedAt
 }

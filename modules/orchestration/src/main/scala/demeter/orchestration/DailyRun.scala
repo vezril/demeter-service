@@ -160,9 +160,11 @@ final class DailyRun[F[_]](
   private def considerMatch(m: Match, now: Instant, report: Ref[F, RunReport]): F[Unit] =
     for {
       history <- observations.observationsFor(m.observation.productKey, now.minusMillis(config.history.window.toMillis))
+      // the row being judged must not be part of the baseline judging it
+      baseline = RollingStats.baselineFor(m.observation, history.map(HistoryPoint(_)))
       stats = RollingStats.rollingStats(
         m.observation.productKey,
-        history.map(HistoryPoint(_)),
+        baseline,
         config.history.window,
         now,
       )

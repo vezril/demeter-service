@@ -83,6 +83,29 @@ final class RollingStatsSpec extends AnyFunSuite with ScalaCheckPropertyChecks {
     assert(empty.n == 0 && empty.weightedMedian.isEmpty)
   }
 
+  test("an observation is excluded from the history it is judged against") {
+    val subject = point(Some(500L)).observation
+    val others  = List(point(Some(250L), weeksAgo = 2), point(Some(300L), weeksAgo = 3))
+    val history = HistoryPoint(subject) :: others
+
+    val baseline = RollingStats.baselineFor(subject, history)
+    assert(baseline.size == 2, "the subject itself is removed")
+    assert(!baseline.exists(_.observation.sameRecordAs(subject)))
+
+    // and with only itself on record, the baseline is empty rather than being
+    // its own price — which is what made every first-run verdict a false negative
+    assert(RollingStats.baselineFor(subject, List(HistoryPoint(subject))).isEmpty)
+    val stats = RollingStats.rollingStats(key, RollingStats.baselineFor(subject, List(HistoryPoint(subject))), wideWindow, now)
+    assert(stats.weightedMedian.isEmpty)
+  }
+
+  test("exclusion matches on the stored identity, not on price equality") {
+    val subject = point(Some(500L)).observation
+    // a DIFFERENT record that happens to carry the same price must survive
+    val twin    = HistoryPoint(subject.copy(flyerId = FlyerId(901L)))
+    assert(RollingStats.baselineFor(subject, List(twin)).size == 1)
+  }
+
   test("history weighting ignores match confidence entirely") {
     // the reason the field was split: an unclassifiable product name must not
     // discount a clean scalar price in the median that decides alerts

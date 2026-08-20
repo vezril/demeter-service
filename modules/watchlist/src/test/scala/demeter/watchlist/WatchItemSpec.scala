@@ -23,6 +23,11 @@ final class WatchItemSpec extends AnyFunSuite {
     assert(w.label == "Milk 4L")
   }
 
+  test("requireSale defaults ON, so a watch does not alert on every match") {
+    val Right(w) = WatchItem.of(WatchId("w1"), "Milk", List("milk"))
+    assert(w.requireSale, "three watches with it off produced 384 alerts in one real run")
+  }
+
   test("an empty merchant set means any merchant") {
     val Right(w) = watch()
     assert(w.inScope(MerchantId(123)))
