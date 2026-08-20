@@ -6,7 +6,7 @@ import cats.effect.IO
 import cats.effect.kernel.Ref
 import cats.effect.unsafe.implicits.global
 import cats.syntax.all._
-import demeter.alerting.{Alert, AlertSink, SinkName}
+import demeter.alerting.{Alert, AlertKey, AlertLedger, AlertRecord, AlertSink, SinkName}
 import demeter.foundations._
 import demeter.persistence._
 
@@ -123,5 +123,27 @@ object InMemory {
   object MemSink {
     def create(fail: Boolean = false): MemSink =
       new MemSink(Ref.of[IO, Vector[Alert]](Vector.empty).unsafeRunSync(), fail)
+  }
+
+  /** Survives across DailyRun instances in a test, the way the real table
+    * survives across restarts.
+    */
+  final class MemAlertLedger(val entries: Ref[IO, Map[AlertKey, AlertRecord]]) extends AlertLedger[IO] {
+    def openAt(now: Instant): IO[Map[AlertKey, AlertRecord]] =
+      entries.get.map(_.filter { case (k, _) => !k.windowTo.isBefore(now) })
+
+    def record(entry: AlertRecord): IO[Either[DealWatchError, Unit]] =
+      entries.update(_ + (entry.key -> entry)).as(Right(()))
+
+    def prune(cutoff: Instant): IO[Int] =
+      entries.modify { es =>
+        val keep = es.filter { case (k, _) => !k.windowTo.isBefore(cutoff) }
+        (keep, es.size - keep.size)
+      }
+  }
+
+  object MemAlertLedger {
+    def create(): MemAlertLedger =
+      new MemAlertLedger(Ref.of[IO, Map[AlertKey, AlertRecord]](Map.empty).unsafeRunSync())
   }
 }

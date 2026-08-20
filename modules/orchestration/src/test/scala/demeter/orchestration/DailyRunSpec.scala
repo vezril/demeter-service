@@ -10,6 +10,7 @@ import cats.effect.unsafe.implicits.global
 import demeter.foundations._
 import demeter.ingestion._
 import demeter.persistence.RawResponseId
+import demeter.alerting.{AlertKey, AlertLedger, AlertRecord}
 import demeter.watchlist.{WatchId, WatchItem}
 import org.scalatest.funsuite.AnyFunSuite
 import InMemory._
@@ -88,8 +89,9 @@ final class DailyRunSpec extends AnyFunSuite {
       fallback: Option[FlyerSource[IO]] = None,
       cfg: Config = config,
       watchlist: List[WatchItem] = List(milkWatch),
+      alertLedger: MemAlertLedger = MemAlertLedger.create(),
   ): (RunReport, MemSink, MemObservationStore, MemRawStore, MemLedger) = {
-    val run = DailyRun.create[IO](source, fallback, rawStore, obsStore, ledger, sink, cfg, watchlist).unsafeRunSync()
+    val run = DailyRun.create[IO](source, fallback, rawStore, obsStore, ledger, sink, alertLedger, cfg, watchlist).unsafeRunSync()
     (run.run.unsafeRunSync(), sink, obsStore, rawStore, ledger)
   }
 
@@ -144,7 +146,7 @@ final class DailyRunSpec extends AnyFunSuite {
     val sink     = MemSink.create()
 
     val source = new ScriptedSource(flyers, _ => Right(items))
-    val run    = DailyRun.create[IO](source, None, rawStore, obsStore, ledger, sink, config, List(milkWatch)).unsafeRunSync()
+    val run    = DailyRun.create[IO](source, None, rawStore, obsStore, ledger, sink, MemAlertLedger.create(), config, List(milkWatch)).unsafeRunSync()
 
     val first  = run.run.unsafeRunSync()
     val second = run.run.unsafeRunSync()
@@ -215,5 +217,74 @@ final class DailyRunSpec extends AnyFunSuite {
     assert(report.elapsed.isDefined)
     assert(report.itemsParsed == 1)
     assert(report.observationsInserted == 1)
+  }
+
+  test("dedup survives a restart: a fresh run does not re-alert what a previous process already sent") {
+    val flyers   = List(flyer(1))
+    val items    = List(item("i1", 1L, "Natrel Milk 4 L", Some(499L)))
+    val obsStore = MemObservationStore.create()
+    val memLedger = MemLedger.create()
+    // the one component that outlives the process, exactly like the real table
+    val alertLedger = MemAlertLedger.create()
+
+    def freshProcess(sink: MemSink) = {
+      val source = new ScriptedSource(flyers, _ => Right(items))
+      DailyRun
+        .create[IO](source, None, MemRawStore.create(), obsStore, memLedger, sink, alertLedger, config, List(milkWatch))
+        .unsafeRunSync()
+    }
+
+    val firstSink = MemSink.create()
+    freshProcess(firstSink).run.unsafeRunSync()
+    assert(firstSink.delivered.get.unsafeRunSync().size == 1, "first process alerts once")
+    assert(alertLedger.entries.get.unsafeRunSync().size == 1, "and records it durably")
+
+    // simulate a restart: brand-new DailyRun, brand-new in-memory Ref, same ledger
+    val secondSink = MemSink.create()
+    freshProcess(secondSink).run.unsafeRunSync()
+    assert(secondSink.delivered.get.unsafeRunSync().isEmpty, "a restart must not re-alert the same deal")
+  }
+
+  test("a price drop still re-alerts after a restart, and the ledger records the lower price") {
+    val obsStore    = MemObservationStore.create()
+    val alertLedger = MemAlertLedger.create()
+
+    def processWith(cents: Long, sink: MemSink) = {
+      val source = new ScriptedSource(List(flyer(1)), _ => Right(List(item("i1", 1L, "Natrel Milk 4 L", Some(cents)))))
+      DailyRun
+        .create[IO](source, None, MemRawStore.create(), obsStore, MemLedger.create(), sink, alertLedger, config, List(milkWatch))
+        .unsafeRunSync()
+    }
+
+    val first = MemSink.create()
+    processWith(499L, first).run.unsafeRunSync()
+    assert(first.delivered.get.unsafeRunSync().size == 1)
+
+    // restart, and the price has dropped inside the same flyer window
+    val second = MemSink.create()
+    processWith(399L, second).run.unsafeRunSync()
+    assert(second.delivered.get.unsafeRunSync().size == 1, "a better deal is still news after a restart")
+    assert(
+      alertLedger.entries.get.unsafeRunSync().values.head.alertedPrice.map(_.cents).contains(399L),
+      "the ledger must carry the NEW lower price, or a later smaller drop would be judged against a stale figure",
+    )
+  }
+
+  test("a ledger write failure is recorded but does not lose the run") {
+    val failing = new AlertLedger[IO] {
+      def openAt(now: Instant): IO[Map[AlertKey, AlertRecord]]           = IO.pure(Map.empty)
+      def record(entry: AlertRecord): IO[Either[DealWatchError, Unit]]   = IO.pure(Left(DealWatchError.StoreUnavailable("ledger down")))
+      def prune(cutoff: Instant): IO[Int]                                = IO.pure(0)
+    }
+    val source = new ScriptedSource(List(flyer(1)), _ => Right(List(item("i1", 1L, "Natrel Milk 4 L", Some(499L)))))
+    val sink   = MemSink.create()
+    val run = DailyRun
+      .create[IO](source, None, MemRawStore.create(), MemObservationStore.create(), MemLedger.create(), sink, failing, config, List(milkWatch))
+      .unsafeRunSync()
+
+    val report = run.run.unsafeRunSync()
+    assert(sink.delivered.get.unsafeRunSync().size == 1, "the alert genuinely went out")
+    assert(report.alertsDelivered == 1)
+    assert(report.failures.exists(_.isInstanceOf[DealWatchError.StoreUnavailable]), "and the bookkeeping failure is visible")
   }
 }

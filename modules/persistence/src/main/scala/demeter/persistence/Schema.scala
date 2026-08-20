@@ -113,6 +113,21 @@ object Schema {
               CHECK (max_price_cents IS NULL OR max_price_cents >= 0)
           )""",
     sql"""CREATE INDEX IF NOT EXISTS watch_item_active_idx ON watch_item (active)""",
+    // What has already been alerted (05.2). The primary key IS the dedup key —
+    // watch + product + the flyer's validity window — so the "same deal, same
+    // window, only once" rule is enforced by the schema, not just by code.
+    // alerted_cents carries the price we last told you about, which is what
+    // makes "the deal got better" decidable across a restart.
+    sql"""CREATE TABLE IF NOT EXISTS alert_ledger (
+            watch_id      text NOT NULL,
+            product_key   text NOT NULL,
+            window_from   timestamptz NOT NULL,
+            window_to     timestamptz NOT NULL,
+            alerted_cents bigint,
+            alerted_at    timestamptz NOT NULL,
+            PRIMARY KEY (watch_id, product_key, window_from, window_to)
+          )""",
+    sql"""CREATE INDEX IF NOT EXISTS alert_ledger_window_idx ON alert_ledger (window_to)""",
     sql"""CREATE INDEX IF NOT EXISTS price_observation_history_idx
             ON price_observation (product_key, observed_at DESC)""",
     sql"""CREATE INDEX IF NOT EXISTS price_observation_window_idx

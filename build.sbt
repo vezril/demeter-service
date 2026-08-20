@@ -60,8 +60,11 @@ lazy val watchlist = (project in file("modules/watchlist"))
 lazy val alerting = (project in file("modules/alerting"))
   .settings(name := "demeter-alerting")
   .settings(commonSettings)
-  .settings(libraryDependencies ++= Seq(cats, catsEffect) ++ http4s ++ circe)
-  .dependsOn(foundations, watchlist, pricehistory)
+  // persistence is declared explicitly rather than leaned on transitively: the
+  // alert ledger (05.2) lives here for the same reason the watch store lives in
+  // watchlist — AlertKey is a 05 type that 03 cannot see.
+  .settings(libraryDependencies ++= Seq(cats, catsEffect) ++ http4s ++ circe ++ doobie)
+  .dependsOn(foundations, watchlist, pricehistory, persistence)
 
 lazy val enrichment = (project in file("modules/enrichment"))
   .settings(name := "demeter-enrichment")

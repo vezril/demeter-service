@@ -33,6 +33,7 @@ final class DailyRun[F[_]](
     sink: AlertSink[F],
     config: Config,
     watchlist: List[WatchItem],
+    alertLedger: AlertLedger[F],
     alertState: Ref[F, Map[AlertKey, AlertRecord]],
     merchantNames: Ref[F, Map[MerchantId, String]],
 )(implicit F: Concurrent[F], C: Clock[F]) {
@@ -41,10 +42,18 @@ final class DailyRun[F[_]](
     for {
       startedAt <- C.realTime
       report    <- Ref.of[F, RunReport](RunReport())
+      // Rehydrate what has already been alerted BEFORE matching. Without this a
+      // restart re-alerts every deal still inside its flyer window (05.2).
+      _         <- rehydrateAlertState(startedAt)
       _         <- listAndProcess(report)
       endedAt   <- C.realTime
       finished  <- report.updateAndGet(r => r.copy(elapsed = Some(endedAt - startedAt)))
     } yield finished
+
+  private def rehydrateAlertState(startedAt: scala.concurrent.duration.FiniteDuration): F[Unit] = {
+    val now = Instant.ofEpochMilli(startedAt.toMillis)
+    alertLedger.openAt(now).flatMap(prior => alertState.set(prior))
+  }
 
   private def listAndProcess(report: Ref[F, RunReport]): F[Unit] =
     C.realTime.map(d => Instant.ofEpochMilli(d.toMillis)).flatMap { now =>
@@ -167,7 +176,16 @@ final class DailyRun[F[_]](
           val merchant = names.getOrElse(deal.observation.merchantId, s"merchant ${deal.observation.merchantId.value}")
           sink.deliver(Alert.of(deal, merchant, config.locale)).flatMap {
             case Right(_) =>
-              alertState.update(_ + (AlertDedup.keyOf(deal) -> AlertDedup.record(deal, now))) *>
+              val entry = AlertDedup.record(deal, now)
+              // Write through to the ledger so the suppression survives a
+              // restart. A ledger write failure is recorded but does not fail
+              // the run — the alert genuinely went out, and the worst case is
+              // one duplicate later, which beats losing the run over bookkeeping.
+              alertState.update(_ + (entry.key -> entry)) *>
+                alertLedger.record(entry).flatMap {
+                  case Right(_)    => F.unit
+                  case Left(error) => report.update(r => r.copy(failures = r.failures :+ error))
+                } *>
                 report.update(r => r.copy(alertsDelivered = r.alertsDelivered + 1))
             case Left(error) =>
               report.update(r => r.copy(failures = r.failures :+ error))
@@ -185,11 +203,14 @@ object DailyRun {
       observations: ObservationStore[F],
       ledger: FlyerLedger[F],
       sink: AlertSink[F],
+      alertLedger: AlertLedger[F],
       config: Config,
       watchlist: List[WatchItem],
   ): F[DailyRun[F]] =
     for {
       alerts    <- Ref.of[F, Map[AlertKey, AlertRecord]](Map.empty)
       merchants <- Ref.of[F, Map[MerchantId, String]](Map.empty)
-    } yield new DailyRun(source, fallbackSource, rawStore, observations, ledger, sink, config, watchlist, alerts, merchants)
+    } yield new DailyRun(
+      source, fallbackSource, rawStore, observations, ledger, sink, config, watchlist, alertLedger, alerts, merchants,
+    )
 }

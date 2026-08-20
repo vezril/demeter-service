@@ -31,10 +31,10 @@ object Main extends IOApp {
 
         case Right(config) =>
           log.info(s"starting demeter-service\n${config.redactedDump}") *>
-            components(config).use { case (source, rawStore, observations, ledger, sink, watches) =>
+            components(config).use { case (source, rawStore, observations, ledger, sink, watches, alertLedger) =>
               for {
                 watchlist <- loadWatchlist(watches, log)
-                run       <- DailyRun.create[IO](source, None, rawStore, observations, ledger, sink, config, watchlist)
+                run       <- DailyRun.create[IO](source, None, rawStore, observations, ledger, sink, alertLedger, config, watchlist)
                 _         <- IO.whenA(config.schedule.runOnStart)(executeOnce(run, log).void)
                 _         <- loop(run, log)
               } yield ExitCode.Success
@@ -110,7 +110,7 @@ object Main extends IOApp {
 
   private def components(
       config: Config
-  ): Resource[IO, (FlyerSource[IO], RawResponseStore[IO], ObservationStore[IO], FlyerLedger[IO], AlertSink[IO], WatchStore[IO])] =
+  ): Resource[IO, (FlyerSource[IO], RawResponseStore[IO], ObservationStore[IO], FlyerLedger[IO], AlertSink[IO], WatchStore[IO], AlertLedger[IO])] =
     for {
       client <- EmberClientBuilder.default[IO].build
       xa     <- transactor(config)
@@ -125,6 +125,7 @@ object Main extends IOApp {
       new DoobieFlyerLedger[IO](xa, config.run.flyerMaxAge),
       sink,
       new DoobieWatchStore[IO](xa),
+      new DoobieAlertLedger[IO](xa),
     )
 
   private def transactor(config: Config): Resource[IO, Transactor[IO]] =
