@@ -59,7 +59,10 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          sbt -batch test 2>&1 | tee /tmp/test.log
+          # noformat: without it sbt wraps every line in ANSI colour even with
+          # no TTY, so `[info]` arrives as \e[0m[\e[0m\e[0minfo\e[0m] and any
+          # anchored match silently finds nothing.
+          sbt -Dsbt.log.noformat=true -batch test 2>&1 | tee /tmp/test.log
       - name: Assert the database-backed tests actually ran
         shell: bash
         # A cancelled @boundary suite is invisible in an exit code: `assume`
@@ -73,7 +76,9 @@ jobs:
             grep -E "canceled [1-9]|CANCELED" /tmp/test.log
             exit 1
           fi
-          grep -E "^\[info\] Tests: " /tmp/test.log
+          # No summary at all means the suites never ran — also a false green.
+          grep -E "Tests: succeeded" /tmp/test.log \
+            || { echo "::error::no ScalaTest summary in the log — the suites did not run"; exit 1; }
 
   # Secret scanning — fail the PR if a credential was committed (language-agnostic).
   secrets-scan:
@@ -88,4 +93,4 @@ jobs:
           V=8.18.4
           curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_linux_x64.tar.gz" \
             | tar xz -C /tmp gitleaks
-          /tmp/gitleaks detect --source . --redact --verbose
+          /tmp/gitleaks detect --source . --config .gitleaks.toml --redact --verbose
