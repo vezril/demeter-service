@@ -3,7 +3,7 @@
 # The suites skip themselves (ScalaTest `assume`) when this isn't running.
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: demeter
       POSTGRES_PASSWORD: demeter
