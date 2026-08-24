@@ -159,3 +159,53 @@ refuses is named individually in the startup log and skipped.
 Personal-use, facts-only, no redistribution of flyer content. Undocumented
 endpoints are wrapped defensively; `@contract` tests are the early-warning system
 for upstream drift. See `specs/README.md` for the full conventions and non-goals.
+
+## Deploy
+
+The service takes its whole configuration from environment variables and binds
+no socket: nothing listens, the run report goes to the log, and alerts are
+pushed outward to Home Assistant. So there is no Service, no Ingress and no
+health endpoint in the chart, and `kubectl logs` is the interface.
+
+```bash
+helm upgrade --install demeter charts/demeter-service \
+  -n demeter --create-namespace \
+  -f charts/demeter-service/values-nas.example.yaml   # edit this first
+```
+
+`charts/demeter-service/` runs the service as a single-replica Deployment with
+`Recreate`, plus a Postgres StatefulSet on one PVC. Both are deliberate:
+
+- **One replica, never two.** The scheduler runs in-process, so a second replica
+  would wake on the same cron and race the first through the same flyers. The
+  fetch ledger keeps the *data* honest, but the duplicate requests are aimed at
+  an undocumented, rate-limited, bot-walled upstream.
+- **Not a CronJob.** The cron lives inside the service, which is what makes the
+  run resumable and the degradation policy (08.2) meaningful.
+- **No liveness probe.** With nothing bound to a port, an HTTP probe would mean
+  inventing an endpoint that proves the JVM answers HTTP rather than that the
+  daily run works. The container exits non-zero on unrecoverable config or store
+  failure and `restartPolicy` handles that honestly.
+
+Point it at an existing database instead with `postgresql.enabled=false` and the
+`externalDatabase.*` values.
+
+The **watchlist lives in the database**, not in the chart values. An empty one
+matches nothing, so add rows to `watch_item` before expecting alerts.
+
+The bundled Postgres has one PVC and no backup of its own. Price history is the
+part of this system that cannot be re-fetched, because flyers expire:
+
+```bash
+kubectl -n demeter exec sts/demeter-demeter-service-postgresql -- \
+  pg_dump -U demeter demeter | gzip > demeter-$(date +%F).sql.gz
+```
+
+### Images
+
+`docker build .` produces the image; the build stage is pinned to
+`$BUILDPLATFORM` so the Scala compile runs once natively and only the JRE base
+varies per architecture. Pushing a `vX.Y.Z` tag publishes a multi-arch
+(amd64 + arm64) image to `ghcr.io/vezril/demeter-service` — that is the only
+thing that publishes, and it never happens as a side effect of merging.
+

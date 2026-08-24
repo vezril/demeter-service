@@ -1,0 +1,102 @@
+{{- if .Values.postgresql.enabled }}
+{{- /*
+A single-instance Postgres with one PVC, written out rather than pulled in as a
+subchart. On a NAS this is the whole database story: one replica, local-path
+storage, no HA. A dependency would drag in replication, metrics exporters and a
+registry to keep track of, none of which apply here.
+
+Turn it off (postgresql.enabled=false) and point externalDatabase at whatever you
+already run -- that is the better answer if the NAS already has a Postgres.
+*/ -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "demeter.postgresFullname" . }}
+  labels: {{- include "demeter.labels" . | nindent 4 }}
+spec:
+  # Headless: there is exactly one pod and nothing to load-balance.
+  clusterIP: None
+  ports:
+    - port: 5432
+      targetPort: postgres
+      name: postgres
+  selector:
+    {{- include "demeter.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: postgresql
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "demeter.postgresFullname" . }}
+  labels: {{- include "demeter.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "demeter.postgresFullname" . }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "demeter.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: postgresql
+  template:
+    metadata:
+      labels:
+        {{- include "demeter.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: postgresql
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70        # the postgres user in the alpine image
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: postgres
+          image: {{ .Values.postgresql.image | quote }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: ["ALL"]}
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.postgresql.database | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.postgresql.username | quote }}
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "demeter.fullname" . }}
+                  key: DEMETER_DB_PASSWORD
+            # The image refuses to initialise into a non-empty mount point, and
+            # a PVC arrives with lost+found on many storage classes.
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.postgresql.username | quote }}, "-d", {{ .Values.postgresql.database | quote }}]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", {{ .Values.postgresql.username | quote }}, "-d", {{ .Values.postgresql.database | quote }}]
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources: {{- toYaml .Values.postgresql.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        {{- with .Values.postgresql.storage.className }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.postgresql.storage.size | quote }}
+{{- end }}

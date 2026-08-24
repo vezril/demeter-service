@@ -1,0 +1,113 @@
+# demeter-service -- values
+#
+# The service takes its entire configuration from environment variables (see
+# Main.scala loadConfig) and binds no socket at all: nothing listens, metrics go
+# to the log, and alerts are pushed outward to Home Assistant. That is why this
+# chart has no Service, no Ingress, and no HTTP probes.
+
+image:
+  repository: ghcr.io/vezril/demeter-service
+  # Pinned by digest or tag at deploy time. Empty means "use .Chart.appVersion".
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# --- the service itself -------------------------------------------------------
+
+config:
+  # Drives which flyers are fetched. There is no sensible default for someone
+  # else's neighbourhood, so this is required and validated on boot.
+  postalCode: ""
+  locale: en-ca
+
+  schedule:
+    # Standard 5-field cron, interpreted in the zone below by the service's own
+    # scheduler. This is NOT a Kubernetes CronJob -- see the Deployment comment.
+    cron: "0 6 * * *"
+    zone: America/Montreal
+    # Run once immediately on startup rather than waiting for the next window.
+    # Useful for a first deploy; leave off afterwards or every pod restart
+    # triggers a full fetch.
+    runOnStart: false
+
+  # At least one sink must be set or the service refuses to start -- alerts with
+  # nowhere to go are worse than a failed deploy, because they are silent.
+  sinks:
+    homeAssistantWebhook: ""
+    homeAssistantMqttTopic: ""
+    ntfyUrl: ""
+    mqtt:
+      broker: ""
+      username: ""
+      # Goes into the Secret, not the Deployment env.
+      password: ""
+
+  # Root log level. DEBUG turns the connection pool back on and is very loud.
+  logLevel: INFO
+
+  enrichment:
+    # PC Express and Canadian Tire decode against schemas that live probing
+    # falsified (see specs/06-enrichment/06.0). Leave disabled until reworked.
+    pcExpressEnabled: false
+    pcExpressApiKey: ""
+
+# --- database -----------------------------------------------------------------
+
+postgresql:
+  # true  -> this chart runs a single Postgres with a PVC (fine for a NAS)
+  # false -> point `external` at a Postgres you already run
+  enabled: true
+
+  image: postgres:16-alpine
+  database: demeter
+  username: demeter
+  password: ""          # required when enabled; generated into the Secret
+  storage:
+    size: 8Gi
+    # Empty uses the cluster default. k3s ships local-path, which is the usual
+    # answer on a NAS; set explicitly if your storage class is named otherwise.
+    className: ""
+  resources:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 512Mi}
+
+externalDatabase:
+  # Used only when postgresql.enabled is false.
+  jdbcUrl: ""           # jdbc:postgresql://host:5432/demeter
+  username: ""
+  password: ""
+
+# --- pod shape ----------------------------------------------------------------
+
+resources:
+  requests: {cpu: 100m, memory: 384Mi}
+  # The JVM is told to use 75% of the limit (MaxRAMPercentage in the image), so
+  # raising this raises the heap with it.
+  limits: {memory: 1Gi}
+
+# JAVA_OPTS override. SerialGC is deliberate: this is one small batch job a day,
+# where a parallel collector costs memory for no benefit.
+javaOpts: "-XX:MaxRAMPercentage=75 -XX:+UseSerialGC"
+
+podAnnotations: {}
+podLabels: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile: {type: RuntimeDefault}
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: {drop: ["ALL"]}
+
+extraEnv: []

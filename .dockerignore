@@ -1,0 +1,19 @@
+# Everything the image does not need. `target/` matters most: shipping local
+# build output into the context both bloats it and risks a stale artifact
+# leaking past the builder stage.
+**/target/
+.git/
+.github/
+.idea/
+.bsp/
+.metals/
+.bloop/
+specs/
+openspec/
+scripts/
+fixtures/
+*.md
+docker-compose.yml
+.scalafmt.conf
+.gitleaks.toml
+charts/
