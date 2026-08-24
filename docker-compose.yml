@@ -3,7 +3,7 @@
 # The suites skip themselves (ScalaTest `assume`) when this isn't running.
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_USER: demeter
       POSTGRES_PASSWORD: demeter
@@ -15,3 +15,18 @@ services:
       interval: 2s
       timeout: 2s
       retries: 15
+    volumes:
+      # Without this the data lived in the container's writable layer, so any
+      # `docker compose down`, or an image bump exactly like this one, silently
+      # destroyed it. That is not a concern for demeter_test, which the suites
+      # rebuild -- but the same container also holds the `demeter` database and
+      # its real price history, which cannot be re-fetched because flyers expire.
+      # Mounted at /var/lib/postgresql, NOT .../data. Postgres 18 moved PGDATA
+      # to /var/lib/postgresql/18/docker and declares the volume one level up;
+      # mounting the old path would leave a named volume holding nothing while
+      # the real data sat in an anonymous volume -- persistence that looks
+      # configured and is not.
+      - postgres-data:/var/lib/postgresql
+
+volumes:
+  postgres-data:

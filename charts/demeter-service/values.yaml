@@ -61,7 +61,7 @@ postgresql:
   # false -> point `external` at a Postgres you already run
   enabled: true
 
-  image: postgres:16-alpine
+  image: postgres:18-alpine
   database: demeter
   username: demeter
   password: ""          # required when enabled; generated into the Secret

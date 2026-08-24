@@ -64,8 +64,13 @@ spec:
                 secretKeyRef:
                   name: {{ include "demeter.fullname" . }}
                   key: DEMETER_DB_PASSWORD
-            # The image refuses to initialise into a non-empty mount point, and
-            # a PVC arrives with lost+found on many storage classes.
+            # Two jobs. It keeps the cluster off the mount root, because the
+            # image refuses to initialise into a non-empty directory and a PVC
+            # arrives with lost+found on many storage classes. It also pins the
+            # location across Postgres majors: 18 moved its own default from
+            # /var/lib/postgresql/data to /var/lib/postgresql/18/docker, which
+            # would have moved the data out from under this mount had the chart
+            # relied on the image default.
             - name: PGDATA
               value: /var/lib/postgresql/data/pgdata
           ports:
