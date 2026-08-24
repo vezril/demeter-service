@@ -40,7 +40,7 @@ jobs:
     # is what makes this gate mean anything.
     services:
       postgres:
-        image: postgres:16-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: demeter
           POSTGRES_PASSWORD: demeter
