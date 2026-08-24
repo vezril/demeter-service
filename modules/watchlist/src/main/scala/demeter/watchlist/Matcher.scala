@@ -59,7 +59,11 @@ object Matcher {
         if (fs.nonEmpty) fs else List(obs.rawName)
       }
       val formTokens = forms.map(f => TextNormalizer.normalize(f, config.stopwords).tokens).filter(_.nonEmpty)
-      watch.terms.toList.flatMap(term => matchTerm(term, formTokens, config)).sortBy(-_.textScore).headOption
+
+      // An exclusion vetoes the whole item, however well a term matched. This
+      // runs first: there is no point scoring something that cannot alert.
+      if (watch.excludeTerms.exists(t => matchTerm(t, formTokens, config).isDefined)) None
+      else watch.terms.toList.flatMap(term => matchTerm(term, formTokens, config)).sortBy(-_.textScore).headOption
     }
 
   private def matchTerm(term: String, formTokens: List[List[String]], config: MatcherConfig): Option[TextMatch] = {

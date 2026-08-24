@@ -46,15 +46,16 @@ final class DoobieWatchStore[F[_]: MonadCancelThrow](xa: Transactor[F]) extends 
 
   def upsert(watch: WatchItem): F[Either[DealWatchError, Unit]] =
     sql"""INSERT INTO watch_item
-            (id, label, terms, merchant_ids, max_price_cents, require_sale, min_discount_pct, active)
+            (id, label, terms, exclude_terms, merchant_ids, max_price_cents, require_sale, min_discount_pct, active)
           VALUES (
-            ${watch.id.value}, ${watch.label}, ${watch.terms.toList},
+            ${watch.id.value}, ${watch.label}, ${watch.terms.toList}, ${watch.excludeTerms},
             ${watch.merchants.toList.map(_.value)}, ${watch.maxPrice.map(_.cents)},
             ${watch.requireSale}, ${watch.minDiscountPct}, ${watch.active}
           )
           ON CONFLICT (id) DO UPDATE SET
             label            = EXCLUDED.label,
             terms            = EXCLUDED.terms,
+            exclude_terms    = EXCLUDED.exclude_terms,
             merchant_ids     = EXCLUDED.merchant_ids,
             max_price_cents  = EXCLUDED.max_price_cents,
             require_sale     = EXCLUDED.require_sale,
@@ -77,7 +78,7 @@ final class DoobieWatchStore[F[_]: MonadCancelThrow](xa: Transactor[F]) extends 
       .recover { case e => Left(DealWatchError.StoreUnavailable(e.toString)) }
 
   private def rows: ConnectionIO[List[WatchRow]] =
-    sql"""SELECT id, label, terms, merchant_ids, max_price_cents, require_sale, min_discount_pct, active
+    sql"""SELECT id, label, terms, exclude_terms, merchant_ids, max_price_cents, require_sale, min_discount_pct, active
           FROM watch_item ORDER BY id""".query[WatchRow].to[List]
 
   /** Rows are re-validated through WatchItem.of on the way out rather than
@@ -98,6 +99,7 @@ private final case class WatchRow(
     id: String,
     label: String,
     terms: List[String],
+    excludeTerms: List[String],
     merchantIds: List[Int],
     maxPriceCents: Option[Long],
     requireSale: Boolean,
@@ -109,6 +111,7 @@ private final case class WatchRow(
       id = WatchId(id),
       label = label,
       terms = terms,
+      excludeTerms = excludeTerms,
       merchants = merchantIds.map(MerchantId(_)).toSet,
       maxPrice = maxPriceCents.map(Money.cents(_)),
       requireSale = requireSale,
