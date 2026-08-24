@@ -2,7 +2,7 @@
 addSbtPlugin("io.stryker-mutator" % "sbt-stryker4s" % "0.16.1")
 
 // Formatting / linting — optional but nice to have wired from day one
-addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.5.2")
+addSbtPlugin("org.scalameta" % "sbt-scalafmt" % "2.6.2")
 
 // Packaging — stages the orchestration module into bin/ + lib/ for the
 // container image. Only `stage` is used; the plugin's own Docker support is
