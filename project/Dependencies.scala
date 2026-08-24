@@ -7,18 +7,18 @@ import sbt._
 object Dependencies {
 
   object V {
-    val cats          = "2.12.0"
+    val cats          = "2.13.0"
     val catsEffect    = "3.5.4"
     val http4s        = "0.23.27"
     val circe         = "0.14.9"
     val doobie        = "1.0.0-RC5"
-    val pureconfig    = "0.17.7"
-    val log4cats      = "2.7.0"
-    val logback       = "1.5.6"
+    val pureconfig    = "0.17.10"
+    val log4cats      = "2.8.0"
+    val logback       = "1.6.3"
     val paho          = "1.2.5"
-    val scalaTest     = "3.2.19"
+    val scalaTest     = "3.2.20"
     val scalaTestPlus = "3.2.19.0"
-    val scalaCheck    = "1.18.0"
+    val scalaCheck    = "1.19.0"
   }
 
   // --- core ---
