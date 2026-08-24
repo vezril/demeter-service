@@ -1,0 +1,49 @@
+version: 2
+
+updates:
+  # Dependabot gained sbt support on 2026-05-26. It is version updates only --
+  # there are no sbt *security* updates -- and it reads build.sbt inputs. This
+  # build keeps its versions in project/Dependencies.scala and references them
+  # from build.sbt, so whether they resolve is something the first run will
+  # settle rather than something worth assuming.
+  - package-ecosystem: "sbt"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "deps"
+    groups:
+      # cats/cats-effect/fs2 and http4s/circe/doobie move together; one PR per
+      # transitive bump would be unreadable. Majors stay separate, since those
+      # are the ones that need actual thought.
+      scala-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # The CI's own supply chain. The actions are SHA-pinned, and resolving those
+  # SHAs by hand is exactly the chore that let three of them sit on a deprecated
+  # Node runtime unnoticed until the annotation was chased down.
+  - package-ecosystem: "github-actions"
+    # "/" covers .github/workflows; the composite action needs its own entry,
+    # since Dependabot scans the directory containing the action.yml.
+    directories:
+      - "/"
+      - "/.github/actions/setup-scala"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  # postgres:16-alpine in docker-compose.yml, the database the @boundary suites
+  # run against. The same image is pinned again as a service container in
+  # ci.yml, which Dependabot does NOT track -- keep the two in step by hand.
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    commit-message:
+      prefix: "ci"
