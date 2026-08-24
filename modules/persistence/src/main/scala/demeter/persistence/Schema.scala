@@ -100,6 +100,7 @@ object Schema {
             id               text PRIMARY KEY,
             label            text NOT NULL,
             terms            text[] NOT NULL,
+            exclude_terms    text[] NOT NULL DEFAULT '{}',
             merchant_ids     int[] NOT NULL DEFAULT '{}',
             max_price_cents  bigint,
             require_sale     boolean NOT NULL DEFAULT true,
@@ -117,6 +118,9 @@ object Schema {
     // New watches default to requiring a genuine sale; existing rows keep
     // whatever was chosen for them.
     sql"ALTER TABLE watch_item ALTER COLUMN require_sale SET DEFAULT true",
+    // Exclusion terms (04.1). ADD COLUMN IF NOT EXISTS is idempotent on its own,
+    // so this needs no guard.
+    sql"ALTER TABLE watch_item ADD COLUMN IF NOT EXISTS exclude_terms text[] NOT NULL DEFAULT '{}'",
     // What has already been alerted (05.2). The primary key IS the dedup key —
     // watch + product + the flyer's validity window — so the "same deal, same
     // window, only once" rule is enforced by the schema, not just by code.

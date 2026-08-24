@@ -26,6 +26,7 @@ final class WatchStoreSpec extends AnyFunSuite {
       id: String = "w-milk",
       label: String = "Milk 4L",
       terms: List[String] = List("milk", "lait"),
+      excludeTerms: List[String] = Nil,
       merchants: Set[MerchantId] = Set.empty,
       maxPrice: Option[Long] = None,
       requireSale: Boolean = false,
@@ -33,7 +34,7 @@ final class WatchStoreSpec extends AnyFunSuite {
       active: Boolean = true,
   ): WatchItem =
     WatchItem
-      .of(WatchId(id), label, terms, merchants, maxPrice.map(Money.cents(_)), requireSale, minDiscountPct, active)
+      .of(WatchId(id), label, terms, excludeTerms, merchants, maxPrice.map(Money.cents(_)), requireSale, minDiscountPct, active)
       .toOption
       .get
 
@@ -50,6 +51,24 @@ final class WatchStoreSpec extends AnyFunSuite {
     assert(loaded.rejected.isEmpty)
     assert(loaded.items.size == 1)
     assert(loaded.items.head == original)
+  }
+
+  pgTest("exclusion terms round-trip, and an absent list is empty rather than null") {
+    store.upsert(watch(excludeTerms = List("arachide", "peanut"))).unsafeRunSync()
+    val loaded = store.load.unsafeRunSync().items.head
+    assert(loaded.excludeTerms == List("arachide", "peanut"))
+
+    store.upsert(watch(id = "plain")).unsafeRunSync()
+    assert(store.load.unsafeRunSync().items.find(_.id.value == "plain").get.excludeTerms.isEmpty)
+  }
+
+  pgTest("a watch predating the column loads with no exclusions") {
+    // rows written before exclude_terms existed take the column default
+    sql"""INSERT INTO watch_item (id, label, terms) VALUES ('legacy', 'Legacy', ARRAY['milk'])"""
+      .update.run.transact(PgTest.xa).unsafeRunSync()
+    val loaded = store.load.unsafeRunSync()
+    assert(loaded.rejected.isEmpty)
+    assert(loaded.items.find(_.id.value == "legacy").get.excludeTerms.isEmpty)
   }
 
   pgTest("upsert replaces an existing watch rather than duplicating it") {

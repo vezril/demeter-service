@@ -137,8 +137,19 @@ VALUES ('coffee', 'Coffee', ARRAY['cafe', 'coffee'], ARRAY[2269, 4592], 20);
 UPDATE watch_item SET active = false WHERE id = 'coffee';
 ```
 
+```sql
+-- exclusion terms veto a match, whatever it cost: "butter" otherwise catches
+-- peanut butter, butter croissants, Butter Chicken and lip butter, and no price
+-- ceiling separates them because peanut butter is cheaper than butter
+UPDATE watch_item
+   SET exclude_terms = ARRAY['arachide','peanut','almond','cookie','croissant','chicken']
+ WHERE id = 'butter';
+```
+
 `terms` are matched in either language after accent-folding (04.2/04.3), so
-`cafe` finds `café`. An empty `merchant_ids` means any merchant. The table's
+`cafe` finds `café`. `exclude_terms` use the same rules, so `arachide` also
+catches `arachides`. A term that is also excluded is refused at startup, since
+such a watch could never match anything. An empty `merchant_ids` means any merchant. The table's
 CHECK constraints mirror the domain rules, so a bad INSERT is rejected outright
 rather than surfacing later; anything the database permits but the domain still
 refuses is named individually in the startup log and skipped.

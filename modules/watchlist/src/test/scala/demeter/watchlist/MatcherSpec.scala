@@ -35,8 +35,16 @@ final class MatcherSpec extends AnyFunSuite {
       matchConfidence = Confidence.High,
     )
 
-  private def watch(terms: List[String], merchants: Set[MerchantId] = Set.empty, active: Boolean = true) =
-    WatchItem.of(WatchId("w1"), "watch", terms, merchants = merchants, active = active).toOption.get
+  private def watch(
+      terms: List[String],
+      merchants: Set[MerchantId] = Set.empty,
+      active: Boolean = true,
+      exclude: List[String] = Nil,
+  ) =
+    WatchItem
+      .of(WatchId("w1"), "watch", terms, excludeTerms = exclude, merchants = merchants, active = active)
+      .toOption
+      .get
 
   test("an English term matches a French-named item via bilingual forms") {
     assert(Matcher.matchItem(watch(List("milk")), obs(List("lait natrel", "natrel milk"))).isDefined)
@@ -168,5 +176,50 @@ final class MatcherSpec extends AnyFunSuite {
   test("accent-folded terms match accented item names") {
     assert(Matcher.matchItem(watch(List("cafe")), obs(List("café instantané"))).isDefined)
     assert(Matcher.matchItem(watch(List("café")), obs(List("cafe instant"))).isDefined)
+  }
+
+  // --- exclusion terms (04.1) ---
+  //
+  // A watch for "butter" alerted on peanut butter, butter croissants, Butter
+  // Chicken and lip butter. Of 33 real alerts that survived a $6 ceiling, only 8
+  // were dairy butter — and no ceiling separates them, because peanut butter at
+  // $2.28 is cheaper than butter.
+
+  test("an exclusion term vetoes a match however well the term itself matched") {
+    // a realistic bilingual watch, as the README documents
+    val w = watch(List("butter", "beurre"), exclude = List("arachide", "peanut"))
+    assert(Matcher.matchItem(w, obs(List("beurre d arachide cremeux"))).isEmpty)
+    assert(Matcher.matchItem(w, obs(List("kraft peanut butter"))).isEmpty)
+    // and the thing you actually wanted still gets through
+    assert(Matcher.matchItem(w, obs(List("lactantia butter"))).isDefined)
+    assert(Matcher.matchItem(w, obs(List("beurre lactantia"))).isDefined)
+  }
+
+  test("exclusions use the same matching as terms, so plurals are covered") {
+    val w = watch(List("butter", "beurre"), exclude = List("arachide"))
+    // "arachides" would need its own entry under exact-only matching
+    assert(Matcher.matchItem(w, obs(List("beurre d arachides biologique tau"))).isEmpty)
+  }
+
+  test("exclusions respect the fuzzy length floor too, so short ones stay literal") {
+    val w = watch(List("milk"), exclude = List("soy"))
+    assert(Matcher.matchItem(w, obs(List("sahmyook soy milk"))).isEmpty, "exact containment still vetoes")
+    assert(Matcher.matchItem(w, obs(List("natrel milk"))).isDefined, "and nothing else is caught by accident")
+  }
+
+  test("an empty exclusion list changes nothing") {
+    val plain = Matcher.matchItem(watch(List("butter")), obs(List("kraft peanut butter")))
+    assert(plain.isDefined, "without exclusions the old behaviour is intact")
+  }
+
+  test("a term that is also excluded is refused at construction, not left silently inert") {
+    val bad = WatchItem.of(WatchId("w"), "Butter", List("butter"), excludeTerms = List("Butter"))
+    assert(bad == Left(WatchItem.InvalidWatch.TermAlsoExcluded("butter")))
+    // compared after normalization, so case and accents cannot sneak past
+    assert(WatchItem.of(WatchId("w"), "Cafe", List("café"), excludeTerms = List("CAFE")).isLeft)
+  }
+
+  test("excluding something unrelated to the terms is fine") {
+    assert(WatchItem.of(WatchId("w"), "Butter", List("butter"), excludeTerms = List("peanut")).isRight)
   }
 }

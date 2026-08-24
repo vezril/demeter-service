@@ -24,6 +24,7 @@ object AlertingFixtures {
       id = WatchId(id),
       label = "Milk 4L",
       terms = NonEmptyList.of("milk", "lait"),
+      excludeTerms = Nil,
       merchants = Set.empty,
       maxPrice = maxPrice.map(Money.cents(_)),
       requireSale = requireSale,
