@@ -1,17 +1,23 @@
 [extend]
 useDefault = true
 
-# The fixtures are verbatim captured responses from Flipp's public flyer API,
-# kept byte-exact so decoder tests run against what the endpoint really returns.
-# They trip the generic-api-key entropy heuristic on fields like
-# "thumbnail_hashed_key": "e58883dc-8473-11f1-be0c-8a607a8e5a80" — a CDN image
-# identifier, public by construction and useless outside that CDN.
+# fixtures/ holds verbatim captured responses from Flipp's public flyer API,
+# kept byte-exact so the decoder tests run against what the endpoint actually
+# returns. Fields like
 #
-# This exempts fixtures/ from ALL rules, not just the entropy heuristic, because
-# the pinned gitleaks (8.18.4) cannot scope an allowlist to a single rule. That
-# is a real gap: a genuine credential pasted into a fixture would not be caught.
-# Everything else — modules/, scripts/, config, workflows — is still scanned, and
-# fixtures should only ever contain recorded public responses.
-[allowlist]
-description = "Public CDN identifiers in captured upstream API fixtures"
+#   "thumbnail_hashed_key": "e58883dc-8473-11f1-be0c-8a607a8e5a80"
+#
+# are CDN image identifiers — public by construction and meaningless outside
+# that CDN — but they trip the generic-api-key rule on entropy alone.
+#
+# All three conditions must hold together (condition = "AND"), so this exempts
+# exactly that shape and nothing more: a private key, an AWS key, a JWT, or any
+# other high-entropy string that is not a bare UUID still fails the scan even
+# inside these same files. Scoping an allowlist to one rule needs gitleaks
+# >= 8.19; the pinned version is in .github/workflows/ci.yml.
+[[allowlists]]
+description = "Public CDN image UUIDs in captured upstream API fixtures"
+targetRules = ["generic-api-key"]
+condition = "AND"
 paths = ['''^fixtures/''']
+regexes = ['''[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}''']

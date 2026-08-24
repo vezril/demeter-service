@@ -90,7 +90,7 @@ jobs:
           fetch-depth: 0 # scan full history
       - name: gitleaks
         run: |
-          V=8.18.4
+          V=8.30.1
           curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_linux_x64.tar.gz" \
             | tar xz -C /tmp gitleaks
-          /tmp/gitleaks detect --source . --config .gitleaks.toml --redact --verbose
+          /tmp/gitleaks git . --config .gitleaks.toml --redact --verbose
