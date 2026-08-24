@@ -47,7 +47,9 @@ final class ObservabilitySpec extends AnyFunSuite {
       .withSuppression("already alerted this window")
 
     assert(report.alertsSuppressed == 4)
-    assert(report.suppressedByReason == Map("above max price" -> 2, "not a sale" -> 1, "already alerted this window" -> 1))
+    assert(
+      report.suppressedByReason == Map("above max price" -> 2, "not a sale" -> 1, "already alerted this window" -> 1)
+    )
 
     val text = Observability.prometheus(report)
     assert(text.contains("""demeter_alerts_suppressed_reason{reason="above max price"} 2.0"""))
@@ -111,14 +113,18 @@ final class ObservabilitySpec extends AnyFunSuite {
 
   test("a Flipp bot wall with a fallback switches source and alerts the operator") {
     val botWall = DealWatchError.BotWall(url, "cf-chl-bypass")
-    assert(DegradationPolicy.decide(botWall, fallbackAvailable = true, essential = true) == Degradation.UseFallbackAndAlert)
+    assert(
+      DegradationPolicy.decide(botWall, fallbackAvailable = true, essential = true) == Degradation.UseFallbackAndAlert
+    )
     assert(DegradationPolicy.needsOperatorAlert(botWall, essential = true))
     assert(!botWall.retriable) // never retried in a loop
   }
 
   test("a Flipp bot wall with no fallback yields a clean partial run plus an operator alert") {
     val botWall = DealWatchError.BotWall(url, "cf-chl")
-    assert(DegradationPolicy.decide(botWall, fallbackAvailable = false, essential = true) == Degradation.PartialRunAndAlert)
+    assert(
+      DegradationPolicy.decide(botWall, fallbackAvailable = false, essential = true) == Degradation.PartialRunAndAlert
+    )
     assert(DegradationPolicy.needsOperatorAlert(botWall, essential = true))
   }
 
@@ -135,6 +141,8 @@ final class ObservabilitySpec extends AnyFunSuite {
 
   test("repeated 5xx past the retry budget degrades the source and continues") {
     val down = DealWatchError.HttpStatus(503, url)
-    assert(DegradationPolicy.decide(down, fallbackAvailable = false, essential = true) == Degradation.PartialRunAndAlert)
+    assert(
+      DegradationPolicy.decide(down, fallbackAvailable = false, essential = true) == Degradation.PartialRunAndAlert
+    )
   }
 }

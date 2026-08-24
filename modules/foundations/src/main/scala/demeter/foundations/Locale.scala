@@ -26,7 +26,7 @@ final case class BilingualText(fr: Option[String], en: Option[String]) {
 }
 
 object BilingualText {
-  val empty: BilingualText            = BilingualText(None, None)
+  val empty: BilingualText             = BilingualText(None, None)
   def frOnly(s: String): BilingualText = BilingualText(Some(s), None)
   def enOnly(s: String): BilingualText = BilingualText(None, Some(s))
 }

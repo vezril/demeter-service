@@ -56,7 +56,8 @@ final class DealDecisionSpec extends AnyFunSuite {
     val o = obs(Some(2999L), original = Some(3999L))
     assert(DealDecision.decide(matched(w, o), DealVerdict.BelowUsual(25)).isInstanceOf[AlertDecision.Alert])
 
-    val corrected = DealDecision.decide(matched(w, o), DealVerdict.AtOrAboveUsual, enrichedRegular = Some(Money.cents(2999)))
+    val corrected =
+      DealDecision.decide(matched(w, o), DealVerdict.AtOrAboveUsual, enrichedRegular = Some(Money.cents(2999)))
     assert(corrected == AlertDecision.Suppress(SuppressReason.DiscountTooShallow))
   }
 

@@ -74,7 +74,14 @@ final class FlippSource[F[_]](
       for {
         json   <- FlippDecoders.parseJson(name.value, raw.bytes)
         parsed <- FlippDecoders.decodeSearch(name.value, json)
-      } yield RawSearchResult(raw, parsed.flyerItems, parsed.ecomItems, parsed.merchants, parsed.normalizedQuery, parsed.dropped)
+      } yield RawSearchResult(
+        raw,
+        parsed.flyerItems,
+        parsed.ecomItems,
+        parsed.merchants,
+        parsed.normalizedQuery,
+        parsed.dropped,
+      )
     }
 
   private def call[A](url: String, locale: Locale)(
@@ -91,9 +98,9 @@ final class FlippSource[F[_]](
   private def classify(url: String, resp: HttpResponse): Either[DealWatchError, HttpResponse] = {
     val body = new String(resp.body, StandardCharsets.UTF_8)
     BotWallDetection.classify(resp.status, body, url, policy.config.botWallSignatures) match {
-      case Some(botWall)                    => Left(botWall)
-      case None if resp.status / 100 == 2   => Right(resp)
-      case None                             => Left(DealWatchError.HttpStatus(resp.status, url))
+      case Some(botWall)                  => Left(botWall)
+      case None if resp.status / 100 == 2 => Right(resp)
+      case None                           => Left(DealWatchError.HttpStatus(resp.status, url))
     }
   }
 }

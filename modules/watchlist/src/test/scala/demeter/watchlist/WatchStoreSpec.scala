@@ -34,7 +34,17 @@ final class WatchStoreSpec extends AnyFunSuite {
       active: Boolean = true,
   ): WatchItem =
     WatchItem
-      .of(WatchId(id), label, terms, excludeTerms, merchants, maxPrice.map(Money.cents(_)), requireSale, minDiscountPct, active)
+      .of(
+        WatchId(id),
+        label,
+        terms,
+        excludeTerms,
+        merchants,
+        maxPrice.map(Money.cents(_)),
+        requireSale,
+        minDiscountPct,
+        active,
+      )
       .toOption
       .get
 
@@ -64,8 +74,9 @@ final class WatchStoreSpec extends AnyFunSuite {
 
   pgTest("a watch predating the column loads with no exclusions") {
     // rows written before exclude_terms existed take the column default
-    sql"""INSERT INTO watch_item (id, label, terms) VALUES ('legacy', 'Legacy', ARRAY['milk'])"""
-      .update.run.transact(PgTest.xa).unsafeRunSync()
+    sql"""INSERT INTO watch_item (id, label, terms) VALUES ('legacy', 'Legacy', ARRAY['milk'])""".update.run
+      .transact(PgTest.xa)
+      .unsafeRunSync()
     val loaded = store.load.unsafeRunSync()
     assert(loaded.rejected.isEmpty)
     assert(loaded.items.find(_.id.value == "legacy").get.excludeTerms.isEmpty)

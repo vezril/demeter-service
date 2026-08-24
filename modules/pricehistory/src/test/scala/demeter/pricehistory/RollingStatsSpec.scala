@@ -52,7 +52,7 @@ final class RollingStatsSpec extends AnyFunSuite with ScalaCheckPropertyChecks {
     assert(stats.min.contains(Money.cents(250)))
     assert(stats.max.contains(Money.cents(349)))
     assert(stats.pricedN == 3)
-    assert(stats.n == 4) // the promo is counted for context...
+    assert(stats.n == 4)                                    // the promo is counted for context...
     assert(stats.weightedMedian.contains(Money.cents(299))) // ...but does not move the median
   }
 
@@ -95,14 +95,15 @@ final class RollingStatsSpec extends AnyFunSuite with ScalaCheckPropertyChecks {
     // and with only itself on record, the baseline is empty rather than being
     // its own price — which is what made every first-run verdict a false negative
     assert(RollingStats.baselineFor(subject, List(HistoryPoint(subject))).isEmpty)
-    val stats = RollingStats.rollingStats(key, RollingStats.baselineFor(subject, List(HistoryPoint(subject))), wideWindow, now)
+    val stats =
+      RollingStats.rollingStats(key, RollingStats.baselineFor(subject, List(HistoryPoint(subject))), wideWindow, now)
     assert(stats.weightedMedian.isEmpty)
   }
 
   test("exclusion matches on the stored identity, not on price equality") {
     val subject = point(Some(500L)).observation
     // a DIFFERENT record that happens to carry the same price must survive
-    val twin    = HistoryPoint(subject.copy(flyerId = FlyerId(901L)))
+    val twin = HistoryPoint(subject.copy(flyerId = FlyerId(901L)))
     assert(RollingStats.baselineFor(subject, List(twin)).size == 1)
   }
 
@@ -123,9 +124,12 @@ final class RollingStatsSpec extends AnyFunSuite with ScalaCheckPropertyChecks {
 
   test("weights are pinned: scalar/High counts full, parsed/Low counts least") {
     assert(RollingStats.weightOf(point(Some(100L))) == 1.0)
-    assert(RollingStats.weightOf(point(Some(100L), basis = PriceBasis.MultiBuyUnit, confidence = Confidence.Medium)) < 1.0)
-    val low   = RollingStats.weightOf(point(Some(100L), basis = PriceBasis.ParsedFromText, confidence = Confidence.Low))
-    val multi = RollingStats.weightOf(point(Some(100L), basis = PriceBasis.MultiBuyUnit, confidence = Confidence.Medium))
+    assert(
+      RollingStats.weightOf(point(Some(100L), basis = PriceBasis.MultiBuyUnit, confidence = Confidence.Medium)) < 1.0
+    )
+    val low = RollingStats.weightOf(point(Some(100L), basis = PriceBasis.ParsedFromText, confidence = Confidence.Low))
+    val multi =
+      RollingStats.weightOf(point(Some(100L), basis = PriceBasis.MultiBuyUnit, confidence = Confidence.Medium))
     assert(low < multi)
   }
 

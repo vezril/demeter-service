@@ -29,7 +29,7 @@ object ObservationAssembler {
   private type Strategy = (FlyerItem, String, Locale) => Option[Derived]
 
   // Prices sometimes hide in the name text ("$4.99" mid-string); findable tokens only.
-  private val NamePriceCandidate = ("""\$\s*\d[\d.,]*|\d+[.,]\d{2}\s*\$|\d+\s*¢""").r
+  private val NamePriceCandidate = """\$\s*\d[\d.,]*|\d+[.,]\d{2}\s*\$|\d+\s*¢""".r
 
   private val ladder: List[Strategy] = List(
     // 1. scalar — a coexisting sale story is recorded but never overrides
@@ -42,12 +42,13 @@ object ObservationAssembler {
         .map(u => Derived(Some(u), PriceBasis.MultiBuyUnit, Confidence.Medium)),
     // 3. percent-off with a known base
     (item, sale, locale) =>
-      item.originalPrice.flatMap(base =>
-        PercentOffParser.parsePercentOff(sale, Some(base), locale).flatMap(_.salePrice)
-      ).map(sp => Derived(Some(sp), PriceBasis.ParsedFromText, Confidence.Medium)),
+      item.originalPrice
+        .flatMap(base => PercentOffParser.parsePercentOff(sale, Some(base), locale).flatMap(_.salePrice))
+        .map(sp => Derived(Some(sp), PriceBasis.ParsedFromText, Confidence.Medium)),
     // 4. percent-off without a base — still a flaggable promo
     (_, sale, locale) =>
-      PercentOffParser.parsePercentOff(sale, None, locale)
+      PercentOffParser
+        .parsePercentOff(sale, None, locale)
         .map(_ => Derived(None, PriceBasis.PercentOffUnknown, Confidence.Medium)),
     // 5. a bare price token findable in the raw name
     (item, _, locale) =>

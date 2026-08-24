@@ -41,14 +41,16 @@ object Replay extends IOApp {
               // merchant belongs to the flyer, not the item, so replay resolves
               // it the same way the live run does
               merchants <- sql"SELECT id, merchant_id FROM flyer".query[(Long, Int)].to[List].transact(xa)
-              byFlyer    = merchants.map { case (f, m) => FlyerId(f) -> MerchantId(m) }.toMap
-              _         <- log.info(s"replaying against ${byFlyer.size} known flyers")
-              counts    <- raws
+              byFlyer = merchants.map { case (f, m) => FlyerId(f) -> MerchantId(m) }.toMap
+              _ <- log.info(s"replaying against ${byFlyer.size} known flyers")
+              counts <- raws
                 .stream(SourceName("flipp"), ResponseKind.FlyerItems)
                 .evalMap { case (rawId, raw) => replayOne(rawId, raw, byFlyer, locale, observations, log) }
                 .compile
                 .foldMonoid
-              _ <- log.info(s"replay complete: ${counts._1} observations inserted, ${counts._2} already present, ${counts._3} items dropped")
+              _ <- log.info(
+                s"replay complete: ${counts._1} observations inserted, ${counts._2} already present, ${counts._3} items dropped"
+              )
             } yield ExitCode.Success
           }
       }

@@ -92,7 +92,8 @@ object MqttPublisher {
           // A broker outage is transient and worth retrying or falling back to
           // the next sink in the chain (05.5), so it maps to a retriable
           // transport error rather than something that kills the run.
-          case e: MqttException => Left(DealWatchError.Transport(config.brokerUrl, s"mqtt ${e.getReasonCode}: ${e.getMessage}"))
-          case e                => Left(DealWatchError.Transport(config.brokerUrl, e.toString))
+          case e: MqttException =>
+            Left(DealWatchError.Transport(config.brokerUrl, s"mqtt ${e.getReasonCode}: ${e.getMessage}"))
+          case e => Left(DealWatchError.Transport(config.brokerUrl, e.toString))
         }
 }

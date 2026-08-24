@@ -8,9 +8,9 @@ import AlertingFixtures._
 /** Spec 05.2 — suppress repeat alerts, surface genuinely new ones. Tags: @pure. */
 final class AlertDedupSpec extends AnyFunSuite {
 
-  private val at        = Instant.parse("2026-07-24T09:00:00Z")
-  private val nextFrom  = Instant.parse("2026-07-30T00:00:00Z")
-  private val nextTo    = Instant.parse("2026-08-06T00:00:00Z")
+  private val at       = Instant.parse("2026-07-24T09:00:00Z")
+  private val nextFrom = Instant.parse("2026-07-30T00:00:00Z")
+  private val nextTo   = Instant.parse("2026-08-06T00:00:00Z")
 
   private def sent(d: Deal): Map[AlertKey, AlertRecord] = Map(AlertDedup.keyOf(d) -> AlertDedup.record(d, at))
 

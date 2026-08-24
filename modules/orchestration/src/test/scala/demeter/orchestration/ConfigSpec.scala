@@ -16,7 +16,8 @@ final class ConfigSpec extends AnyFunSuite {
       sinks: SinkConfig = SinkConfig(haWebhookUrl = Some("http://ha.local/hook")),
       run: RunConfig = RunConfig(),
       history: HistoryConfig = HistoryConfig(),
-  ) = Config(postal, Locale.EnCa, sources = sources, enrichment = enrichment, sinks = sinks, run = run, history = history)
+  ) =
+    Config(postal, Locale.EnCa, sources = sources, enrichment = enrichment, sinks = sinks, run = run, history = history)
 
   test("an invalid postal code stops startup with a clear error") {
     val result = Config.parsePostal("12345")
@@ -71,7 +72,9 @@ final class ConfigSpec extends AnyFunSuite {
   test("an MQTT topic with no broker is refused: it looks configured and delivers nothing") {
     val errors = Config
       .validate(config(sinks = SinkConfig(haMqttTopic = Some("demeter/deals"))))
-      .swap.toOption.get
+      .swap
+      .toOption
+      .get
     assert(errors.exists(_.message.contains("mqttBrokerUrl")))
   }
 
@@ -101,14 +104,15 @@ final class ConfigSpec extends AnyFunSuite {
   }
 
   test("a config dump redacts secrets but keeps diagnostics readable") {
-    val dumped = config(enrichment = EnrichmentConfig(pcExpressEnabled = true, pcExpressApiKey = Some(Secret("SUPER-SECRET"))))
-      .copy(storage = StorageConfig(password = Secret("hunter2")))
-      .redactedDump
+    val dumped =
+      config(enrichment = EnrichmentConfig(pcExpressEnabled = true, pcExpressApiKey = Some(Secret("SUPER-SECRET"))))
+        .copy(storage = StorageConfig(password = Secret("hunter2")))
+        .redactedDump
 
     assert(!dumped.contains("SUPER-SECRET"))
     assert(!dumped.contains("hunter2"))
     assert(dumped.contains("REDACTED"))
-    assert(dumped.contains("H2X1Y6"))       // non-secret settings stay visible
+    assert(dumped.contains("H2X1Y6")) // non-secret settings stay visible
     assert(dumped.contains("flyerConcurrency"))
   }
 

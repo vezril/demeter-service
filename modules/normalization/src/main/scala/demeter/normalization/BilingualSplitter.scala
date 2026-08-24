@@ -18,26 +18,121 @@ object BilingualSplitter {
   private val FrenchDiacritics = "àâäçéèêëîïôöùûüÿ".toSet
 
   private val FrenchWords: Set[String] = Set(
-    "lait", "beurre", "fromage", "oeuf", "oeufs", "pain", "jus", "poulet", "boeuf", "porc",
-    "jambon", "yogourt", "legumes", "fruits", "pomme", "pommes", "arachide", "arachides",
-    "croquant", "creme", "glacee", "sucre", "farine", "gratuit", "rabais", "prix", "moitie",
-    "chacun", "paquet", "boite", "surgele", "frais", "fume", "filtre", "finement", "saveur",
-    "biologique", "poisson", "saumon", "riz", "cafe", "the", "eau", "de", "du", "des", "au",
-    "aux", "avec", "et", "pour", "sans", "sur",
+    "lait",
+    "beurre",
+    "fromage",
+    "oeuf",
+    "oeufs",
+    "pain",
+    "jus",
+    "poulet",
+    "boeuf",
+    "porc",
+    "jambon",
+    "yogourt",
+    "legumes",
+    "fruits",
+    "pomme",
+    "pommes",
+    "arachide",
+    "arachides",
+    "croquant",
+    "creme",
+    "glacee",
+    "sucre",
+    "farine",
+    "gratuit",
+    "rabais",
+    "prix",
+    "moitie",
+    "chacun",
+    "paquet",
+    "boite",
+    "surgele",
+    "frais",
+    "fume",
+    "filtre",
+    "finement",
+    "saveur",
+    "biologique",
+    "poisson",
+    "saumon",
+    "riz",
+    "cafe",
+    "the",
+    "eau",
+    "de",
+    "du",
+    "des",
+    "au",
+    "aux",
+    "avec",
+    "et",
+    "pour",
+    "sans",
+    "sur",
   )
 
   private val EnglishWords: Set[String] = Set(
-    "milk", "butter", "cheese", "egg", "eggs", "bread", "juice", "chicken", "beef", "pork",
-    "ham", "yogurt", "vegetables", "fruit", "apple", "apples", "peanut", "crunchy", "cream",
-    "ice", "sugar", "flour", "free", "price", "half", "each", "pack", "box", "frozen",
-    "fresh", "smoked", "filtered", "finely", "fine", "flavour", "flavor", "organic", "fish",
-    "salmon", "rice", "coffee", "tea", "water", "the", "with", "and", "for", "of", "shelf",
-    "rack", "resin", "tool", "tools", "set",
+    "milk",
+    "butter",
+    "cheese",
+    "egg",
+    "eggs",
+    "bread",
+    "juice",
+    "chicken",
+    "beef",
+    "pork",
+    "ham",
+    "yogurt",
+    "vegetables",
+    "fruit",
+    "apple",
+    "apples",
+    "peanut",
+    "crunchy",
+    "cream",
+    "ice",
+    "sugar",
+    "flour",
+    "free",
+    "price",
+    "half",
+    "each",
+    "pack",
+    "box",
+    "frozen",
+    "fresh",
+    "smoked",
+    "filtered",
+    "finely",
+    "fine",
+    "flavour",
+    "flavor",
+    "organic",
+    "fish",
+    "salmon",
+    "rice",
+    "coffee",
+    "tea",
+    "water",
+    "the",
+    "with",
+    "and",
+    "for",
+    "of",
+    "shelf",
+    "rack",
+    "resin",
+    "tool",
+    "tools",
+    "set",
   )
 
   def splitBilingual(raw: String): SplitResult = {
     val segments = Separators
-      .foldLeft(List(raw)) { (segs, sep) => segs.flatMap(_.split(sep).toList) }
+      .foldLeft(List(raw))((segs, sep) => segs.flatMap(_.split(sep).toList))
       .map(_.trim)
       .filter(_.nonEmpty)
 
@@ -57,8 +152,11 @@ object BilingualSplitter {
   private def scores(s: String): (Int, Int) = {
     val lower  = s.toLowerCase
     val tokens = TextNormalizer.normalize(s, stopwords = Set.empty).tokens
-    val fr     = lower.count(FrenchDiacritics) * 2 + tokens.count(FrenchWords) + (if (lower.contains("d'") || lower.contains("l'")) 1 else 0)
-    val en     = tokens.count(EnglishWords)
+    val fr =
+      lower.count(FrenchDiacritics) * 2 + tokens.count(FrenchWords) + (if (lower.contains("d'") || lower.contains("l'"))
+                                                                         1
+                                                                       else 0)
+    val en = tokens.count(EnglishWords)
     (fr, en)
   }
 

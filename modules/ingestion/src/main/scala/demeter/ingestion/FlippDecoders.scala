@@ -163,8 +163,8 @@ object FlippDecoders {
           case None           => priceValue(source, s"$pointer.price", c.downField("price").focus)
         }
       original <- priceValue(source, s"$pointer.original_price", c.downField("original_price").focus)
-      from       <- instantAt(source, c, "valid_from", pointer)
-      to         <- instantAt(source, c, "valid_to", pointer)
+      from     <- instantAt(source, c, "valid_from", pointer)
+      to       <- instantAt(source, c, "valid_to", pointer)
       _ <-
         if (from.isBefore(to)) Right(())
         else Left(Decode(source, pointer, s"non-positive validity window: $from >= $to"))
@@ -176,7 +176,7 @@ object FlippDecoders {
       // opaque sale text — the same treatment "25 points" gets — rather than
       // being read as a percentage and used to fabricate an original price,
       // which would silently corrupt discount gating (05.1) and verdicts (07.3).
-      val discount  = c.downField("discount").focus.flatMap(_.asNumber).map(n => s"discount ${n.toString}")
+      val discount = c.downField("discount").focus.flatMap(_.asNumber).map(n => s"discount ${n.toString}")
       val saleStory =
         List(optStr(c, "pre_price_text"), optStr(c, "sale_story"), optStr(c, "post_price_text"), discount).flatten
       FlyerItem(
@@ -200,10 +200,12 @@ object FlippDecoders {
         val indexed = values.toList.zipWithIndex
         val results = indexed.map { case (j, i) => (decodeItem(source, j.hcursor, s"$field[$i]"), j) }
         val items   = results.collect { case (Right(item), _) => item }
-        val merchants = results.collect {
-          case (Right(item), j) =>
+        val merchants = results
+          .collect { case (Right(item), j) =>
             j.hcursor.downField("merchant_name").focus.flatMap(_.asString).map(Merchant(item.merchantId, _))
-        }.flatten.distinct
+          }
+          .flatten
+          .distinct
         (items, merchants, results.count(_._1.isLeft))
     }
 

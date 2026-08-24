@@ -8,8 +8,8 @@ import java.time.Instant
   * contexts that own it. Absence is modelled honestly: a missing price is an
   * `Option`, never a sentinel.
   */
-final case class MerchantId(value: Int)  extends AnyVal
-final case class FlyerId(value: Long)    extends AnyVal
+final case class MerchantId(value: Int) extends AnyVal
+final case class FlyerId(value: Long)   extends AnyVal
 
 /** Our own stable key (derived in 02.7); opaque here. */
 final case class ProductKey(value: String) extends AnyVal
@@ -109,7 +109,7 @@ final case class PriceObservation(
     effectivePrice: Option[Money],
     priceBasis: PriceBasis,
     originalPrice: Option[Money],
-    size: Option[Size],           // extracted by 02.4; feeds the product dimension (03.1)
+    size: Option[Size], // extracted by 02.4; feeds the product dimension (03.1)
     unitPrice: Option[UnitPrice],
     saleText: Option[String],
     validFrom: Instant,

@@ -32,13 +32,21 @@ object InMemory {
       )
 
     def stream(source: SourceName, kind: ResponseKind): fs2.Stream[IO, (RawResponseId, RawResponse)] =
-      fs2.Stream.evalSeq(rows.get.map(_.zipWithIndex.collect {
-        case ((raw, k), i) if k == kind => (RawResponseId(i.toLong + 1), raw)
-      }.toList))
+      fs2.Stream.evalSeq(
+        rows.get.map(
+          _.zipWithIndex
+            .collect {
+              case ((raw, k), i) if k == kind => (RawResponseId(i.toLong + 1), raw)
+            }
+            .toList
+        )
+      )
   }
 
   object MemRawStore {
-    def create(): MemRawStore = new MemRawStore(Ref.of[IO, Vector[(RawResponse, ResponseKind)]](Vector.empty).unsafeRunSync())
+    def create(): MemRawStore = new MemRawStore(
+      Ref.of[IO, Vector[(RawResponse, ResponseKind)]](Vector.empty).unsafeRunSync()
+    )
   }
 
   /** Honours the same (product_key, flyer_id, observed_at) uniqueness the real
@@ -81,10 +89,14 @@ object InMemory {
       }
 
     def observationsFor(k: ProductKey, since: Instant): IO[List[PriceObservation]] =
-      saved.get.map(_.filter(o => o.productKey == k && !o.observedAt.isBefore(since)).sortBy(_.observedAt).reverse.toList)
+      saved.get.map(
+        _.filter(o => o.productKey == k && !o.observedAt.isBefore(since)).sortBy(_.observedAt).reverse.toList
+      )
 
     def currentObservations(activeAt: Instant): fs2.Stream[IO, PriceObservation] =
-      fs2.Stream.evalSeq(saved.get.map(_.filter(o => !o.validFrom.isAfter(activeAt) && !o.validTo.isBefore(activeAt)).toList))
+      fs2.Stream.evalSeq(
+        saved.get.map(_.filter(o => !o.validFrom.isAfter(activeAt) && !o.validTo.isBefore(activeAt)).toList)
+      )
 
     def currentObservationsFor(merchant: MerchantId, activeAt: Instant): fs2.Stream[IO, PriceObservation] =
       currentObservations(activeAt).filter(_.merchantId == merchant)

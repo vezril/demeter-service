@@ -120,7 +120,11 @@ final class MatcherSpec extends AnyFunSuite {
     val patio = Matcher
       .matchItem(
         watch(List("coffee")),
-        obs(List("montego 6 piece canopy outdoor patio conversation set with canopy sofa 2 armless chairs ottoman glass top coffee end table")),
+        obs(
+          List(
+            "montego 6 piece canopy outdoor patio conversation set with canopy sofa 2 armless chairs ottoman glass top coffee end table"
+          )
+        ),
       )
       .get
     val actualCoffee = Matcher.matchItem(watch(List("coffee")), obs(List("nabob ground coffee 300 g"))).get
@@ -134,7 +138,14 @@ final class MatcherSpec extends AnyFunSuite {
     // match looks like; the raw ratio (0.17) would rank it near the patio set
     val milk = Matcher.matchItem(watch(List("milk")), obs(List("natrel fine filtered milk 4 l"))).get
     val patio = Matcher
-      .matchItem(watch(List("coffee")), obs(List("montego 6 piece canopy outdoor patio conversation set with canopy sofa 2 armless chairs ottoman glass top coffee end table")))
+      .matchItem(
+        watch(List("coffee")),
+        obs(
+          List(
+            "montego 6 piece canopy outdoor patio conversation set with canopy sofa 2 armless chairs ottoman glass top coffee end table"
+          )
+        ),
+      )
       .get
     assert(milk.textScore > patio.textScore * 1.5, "a real grocery match must stay clearly ahead")
   }

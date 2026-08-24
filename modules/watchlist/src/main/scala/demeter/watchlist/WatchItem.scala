@@ -22,7 +22,7 @@ final case class WatchItem(
       * so plurals ("arachide"/"arachides") are caught without a second entry.
       */
     excludeTerms: List[String],
-    merchants: Set[MerchantId],      // empty = any merchant
+    merchants: Set[MerchantId], // empty = any merchant
     maxPrice: Option[Money],
     requireSale: Boolean,
     minDiscountPct: Option[Int],
@@ -35,9 +35,10 @@ object WatchItem {
 
   sealed abstract class InvalidWatch extends Product with Serializable
   object InvalidWatch {
-    case object NoTerms      extends InvalidWatch
-    case object EmptyLabel   extends InvalidWatch
+    case object NoTerms                    extends InvalidWatch
+    case object EmptyLabel                 extends InvalidWatch
     final case class BadDiscount(pct: Int) extends InvalidWatch
+
     /** A term that is also excluded can never match anything. Silently accepting
       * it produces a watch that looks configured and is permanently inert.
       */
@@ -62,7 +63,7 @@ object WatchItem {
     val excluded = excludeTerms.map(_.trim).filter(_.nonEmpty)
 
     def normalized(t: String) = TextNormalizer.normalize(t).joined
-    val selfDefeating = cleaned.find(t => excluded.exists(e => normalized(e) == normalized(t)))
+    val selfDefeating         = cleaned.find(t => excluded.exists(e => normalized(e) == normalized(t)))
 
     for {
       nel <- NonEmptyList.fromList(cleaned).toRight(InvalidWatch.NoTerms)

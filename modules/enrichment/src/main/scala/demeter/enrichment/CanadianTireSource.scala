@@ -35,7 +35,7 @@ final class CanadianTireSource[F[_]](
     config: CanadianTireConfig,
     transport: HttpTransport[F],
     policy: HttpPolicy[F],
-    gate: Semaphore[F],                       // serializes: never fan CT out in parallel
+    gate: Semaphore[F], // serializes: never fan CT out in parallel
     cache: Ref[F, Map[String, CachedEnrichment]],
 )(implicit F: Temporal[F])
     extends EnrichmentSource[F] {
@@ -72,16 +72,18 @@ final class CanadianTireSource[F[_]](
 
   private def fetch(query: String, near: PostalCode, locale: Locale): F[Either[DealWatchError, List[EnrichedPrice]]] = {
     val url = s"${config.baseUrl}?lang=${if (locale == Locale.FrCa) "fr_CA" else "en_CA"}&q=$query"
-    policy.run(url)(transport.get(url, Map("User-Agent" -> policy.config.userAgent)).map(_.flatMap(classify(url, _)))).flatMap {
-      case Left(e) => F.pure(Left(e))
-      case Right(resp) =>
-        F.realTimeInstant.map { now =>
-          io.circe.parser
-            .parse(new String(resp.body, StandardCharsets.UTF_8))
-            .leftMap(f => DealWatchError.Decode(name.value, "", s"not JSON: ${f.message}"): DealWatchError)
-            .map(CanadianTireSource.decode(_, config.merchantId, name, now))
-        }
-    }
+    policy
+      .run(url)(transport.get(url, Map("User-Agent" -> policy.config.userAgent)).map(_.flatMap(classify(url, _))))
+      .flatMap {
+        case Left(e) => F.pure(Left(e))
+        case Right(resp) =>
+          F.realTimeInstant.map { now =>
+            io.circe.parser
+              .parse(new String(resp.body, StandardCharsets.UTF_8))
+              .leftMap(f => DealWatchError.Decode(name.value, "", s"not JSON: ${f.message}"): DealWatchError)
+              .map(CanadianTireSource.decode(_, config.merchantId, name, now))
+          }
+      }
   }
 
   private def classify(url: String, resp: HttpResponse): Either[DealWatchError, HttpResponse] =
@@ -91,8 +93,8 @@ final class CanadianTireSource[F[_]](
 object CanadianTireSource {
 
   /** CT gets a stricter rate limit than the grocery sources (06.4). */
-  val StricterRateLimit: Int              = 1
-  val StricterRateWindow: FiniteDuration  = 20.seconds
+  val StricterRateLimit: Int             = 1
+  val StricterRateWindow: FiniteDuration = 20.seconds
 
   def create[F[_]: Temporal](
       config: CanadianTireConfig,
@@ -105,13 +107,17 @@ object CanadianTireSource {
     } yield new CanadianTireSource(config, transport, policy, gate, cache)
 
   def decode(json: Json, merchant: MerchantId, source: SourceName, now: Instant): List[EnrichedPrice] =
-    json.hcursor.downField("skus").values
+    json.hcursor
+      .downField("skus")
+      .values
       .orElse(json.hcursor.downField("products").values)
       .toList
       .flatMap(_.toList)
       .flatMap { p =>
         val c = p.hcursor
-        val label = c.get[String]("title").toOption
+        val label = c
+          .get[String]("title")
+          .toOption
           .orElse(c.get[String]("name").toOption)
           .orElse(c.get[String]("code").toOption)
         label.map { n =>

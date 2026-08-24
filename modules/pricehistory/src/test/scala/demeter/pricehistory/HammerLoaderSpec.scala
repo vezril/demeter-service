@@ -37,8 +37,8 @@ final class HammerLoaderSpec extends AnyFunSuite {
   )
 
   private def loadAll(): (LoadReport, List[(HammerRow, MerchantId, Provenance)]) = {
-    val seen   = Ref.of[IO, List[(HammerRow, MerchantId, Provenance)]](Nil).unsafeRunSync()
-    val loader = new CsvHammerLoader[IO](onRow = (r, m, p) => seen.update(_ :+ ((r, m, p))))
+    val seen          = Ref.of[IO, List[(HammerRow, MerchantId, Provenance)]](Nil).unsafeRunSync()
+    val loader        = new CsvHammerLoader[IO](onRow = (r, m, p) => seen.update(_ :+ ((r, m, p))))
     val Right(report) = loader.load(productCsv, rawCsv).unsafeRunSync()
     (report, seen.get.unsafeRunSync())
   }
@@ -76,8 +76,8 @@ final class HammerLoaderSpec extends AnyFunSuite {
   }
 
   test("a row with an unparseable date is skipped, not fatal") {
-    val badRaw = tempCsv("raw-bad", "product_id,current_price,nowtime\n1,4.99,not-a-date\n")
-    val loader = new CsvHammerLoader[IO](onRow = (_, _, _) => IO.unit)
+    val badRaw        = tempCsv("raw-bad", "product_id,current_price,nowtime\n1,4.99,not-a-date\n")
+    val loader        = new CsvHammerLoader[IO](onRow = (_, _, _) => IO.unit)
     val Right(report) = loader.load(productCsv, badRaw).unsafeRunSync()
     assert(report.priceRows == 0 && report.skipped == 1)
   }

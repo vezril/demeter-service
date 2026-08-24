@@ -13,9 +13,9 @@ object Currency {
 sealed abstract class MoneyError extends Product with Serializable
 
 object MoneyError {
-  final case class NotANumber(input: String)           extends MoneyError
-  final case class TooManyDecimalPlaces(input: String) extends MoneyError
-  final case class Negative(input: String)             extends MoneyError
+  final case class NotANumber(input: String)                         extends MoneyError
+  final case class TooManyDecimalPlaces(input: String)               extends MoneyError
+  final case class Negative(input: String)                           extends MoneyError
   final case class CurrencyMismatch(left: Currency, right: Currency) extends MoneyError
 }
 

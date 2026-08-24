@@ -72,7 +72,11 @@ final class DailyRunSpec extends AnyFunSuite {
     val capabilities: Set[Capability] = Set(Capability.Flyers, Capability.Items, Capability.Search)
 
     def flyers(p: PostalCode, l: Locale): IO[Either[DealWatchError, RawFlyerListing]] =
-      IO.pure(listingResult.getOrElse(Right(RawFlyerListing(rawResponse, flyers, List(Merchant(MerchantId(100), "Metro")), 0))))
+      IO.pure(
+        listingResult.getOrElse(
+          Right(RawFlyerListing(rawResponse, flyers, List(Merchant(MerchantId(100), "Metro")), 0))
+        )
+      )
 
     def items(flyerId: FlyerId, p: PostalCode, l: Locale): IO[Either[DealWatchError, RawFlyerItems]] =
       calls.update(_ :+ flyerId) *>
@@ -95,7 +99,9 @@ final class DailyRunSpec extends AnyFunSuite {
       watchlist: List[WatchItem] = List(milkWatch),
       alertLedger: MemAlertLedger = MemAlertLedger.create(),
   ): (RunReport, MemSink, MemObservationStore, MemRawStore, MemLedger) = {
-    val run = DailyRun.create[IO](source, fallback, rawStore, obsStore, ledger, sink, alertLedger, cfg, watchlist).unsafeRunSync()
+    val run = DailyRun
+      .create[IO](source, fallback, rawStore, obsStore, ledger, sink, alertLedger, cfg, watchlist)
+      .unsafeRunSync()
     (run.run.unsafeRunSync(), sink, obsStore, rawStore, ledger)
   }
 
@@ -105,7 +111,7 @@ final class DailyRunSpec extends AnyFunSuite {
     // pretend 88 were already fetched for this exact window
     flyers.take(88).foreach(f => ledger.markFetched(f.id, (f.validFrom, f.validTo), RawResponseId(1)).unsafeRunSync())
 
-    val source = new ScriptedSource(flyers, _ => Right(Nil))
+    val source               = new ScriptedSource(flyers, _ => Right(Nil))
     val (report, _, _, _, _) = runWith(source, ledger = ledger)
 
     assert(report.flyersListed == 100)
@@ -117,7 +123,9 @@ final class DailyRunSpec extends AnyFunSuite {
     val flyers = (1 to 12).map(i => flyer(i.toLong)).toList
     val source = new ScriptedSource(
       flyers,
-      id => if (id.value == 7L) Left(DealWatchError.Decode("scripted", "items[0]", "boom")) else Right(List(item(s"i${id.value}", id.value, "Natrel Milk 4 L", Some(499L)))),
+      id =>
+        if (id.value == 7L) Left(DealWatchError.Decode("scripted", "items[0]", "boom"))
+        else Right(List(item(s"i${id.value}", id.value, "Natrel Milk 4 L", Some(499L)))),
     )
     val (report, _, obs, _, _) = runWith(source)
 
@@ -150,7 +158,9 @@ final class DailyRunSpec extends AnyFunSuite {
     val sink     = MemSink.create()
 
     val source = new ScriptedSource(flyers, _ => Right(items))
-    val run    = DailyRun.create[IO](source, None, rawStore, obsStore, ledger, sink, MemAlertLedger.create(), config, List(milkWatch)).unsafeRunSync()
+    val run = DailyRun
+      .create[IO](source, None, rawStore, obsStore, ledger, sink, MemAlertLedger.create(), config, List(milkWatch))
+      .unsafeRunSync()
 
     val first  = run.run.unsafeRunSync()
     val second = run.run.unsafeRunSync()
@@ -172,16 +182,21 @@ final class DailyRunSpec extends AnyFunSuite {
   }
 
   test("an unmatched item produces no alert") {
-    val source = new ScriptedSource(List(flyer(1)), _ => Right(List(item("i1", 1L, "MASTERCRAFT Socket Set", Some(2999L)))))
+    val source =
+      new ScriptedSource(List(flyer(1)), _ => Right(List(item("i1", 1L, "MASTERCRAFT Socket Set", Some(2999L)))))
     val (report, sink, _, _, _) = runWith(source)
     assert(report.matches == 0)
     assert(sink.delivered.get.unsafeRunSync().isEmpty)
   }
 
   test("a listing bot wall switches to the fallback source") {
-    val botWall  = DealWatchError.BotWall("https://backflipp", "cf-chl-bypass")
-    val blocked  = new ScriptedSource(Nil, _ => Right(Nil), listingResult = Some(Left(botWall)))
-    val fallback = new ScriptedSource(List(flyer(1)), _ => Right(List(item("i1", 1L, "Natrel Milk 4 L", Some(499L)))), name = SourceName("apify"))
+    val botWall = DealWatchError.BotWall("https://backflipp", "cf-chl-bypass")
+    val blocked = new ScriptedSource(Nil, _ => Right(Nil), listingResult = Some(Left(botWall)))
+    val fallback = new ScriptedSource(
+      List(flyer(1)),
+      _ => Right(List(item("i1", 1L, "Natrel Milk 4 L", Some(499L)))),
+      name = SourceName("apify"),
+    )
 
     val (report, _, _, _, _) = runWith(blocked, fallback = Some(fallback))
     assert(report.degraded.exists(_.reason.isInstanceOf[DealWatchError.BotWall]))
@@ -190,8 +205,8 @@ final class DailyRunSpec extends AnyFunSuite {
   }
 
   test("a listing bot wall with no fallback yields a clean partial run, not a crash") {
-    val botWall = DealWatchError.BotWall("https://backflipp", "cf-chl")
-    val blocked = new ScriptedSource(Nil, _ => Right(Nil), listingResult = Some(Left(botWall)))
+    val botWall                 = DealWatchError.BotWall("https://backflipp", "cf-chl")
+    val blocked                 = new ScriptedSource(Nil, _ => Right(Nil), listingResult = Some(Left(botWall)))
     val (report, sink, _, _, _) = runWith(blocked)
     assert(report.partial)
     assert(report.flyersFetched == 0)
@@ -224,9 +239,9 @@ final class DailyRunSpec extends AnyFunSuite {
   }
 
   test("dedup survives a restart: a fresh run does not re-alert what a previous process already sent") {
-    val flyers   = List(flyer(1))
-    val items    = List(item("i1", 1L, "Natrel Milk 4 L", Some(499L)))
-    val obsStore = MemObservationStore.create()
+    val flyers    = List(flyer(1))
+    val items     = List(item("i1", 1L, "Natrel Milk 4 L", Some(499L)))
+    val obsStore  = MemObservationStore.create()
     val memLedger = MemLedger.create()
     // the one component that outlives the process, exactly like the real table
     val alertLedger = MemAlertLedger.create()
@@ -256,7 +271,17 @@ final class DailyRunSpec extends AnyFunSuite {
     def processWith(cents: Long, sink: MemSink) = {
       val source = new ScriptedSource(List(flyer(1)), _ => Right(List(item("i1", 1L, "Natrel Milk 4 L", Some(cents)))))
       DailyRun
-        .create[IO](source, None, MemRawStore.create(), obsStore, MemLedger.create(), sink, alertLedger, config, List(milkWatch))
+        .create[IO](
+          source,
+          None,
+          MemRawStore.create(),
+          obsStore,
+          MemLedger.create(),
+          sink,
+          alertLedger,
+          config,
+          List(milkWatch),
+        )
         .unsafeRunSync()
     }
 
@@ -276,19 +301,33 @@ final class DailyRunSpec extends AnyFunSuite {
 
   test("a ledger write failure is recorded but does not lose the run") {
     val failing = new AlertLedger[IO] {
-      def openAt(now: Instant): IO[Map[AlertKey, AlertRecord]]           = IO.pure(Map.empty)
-      def record(entry: AlertRecord): IO[Either[DealWatchError, Unit]]   = IO.pure(Left(DealWatchError.StoreUnavailable("ledger down")))
-      def prune(cutoff: Instant): IO[Int]                                = IO.pure(0)
+      def openAt(now: Instant): IO[Map[AlertKey, AlertRecord]] = IO.pure(Map.empty)
+      def record(entry: AlertRecord): IO[Either[DealWatchError, Unit]] =
+        IO.pure(Left(DealWatchError.StoreUnavailable("ledger down")))
+      def prune(cutoff: Instant): IO[Int] = IO.pure(0)
     }
     val source = new ScriptedSource(List(flyer(1)), _ => Right(List(item("i1", 1L, "Natrel Milk 4 L", Some(499L)))))
     val sink   = MemSink.create()
     val run = DailyRun
-      .create[IO](source, None, MemRawStore.create(), MemObservationStore.create(), MemLedger.create(), sink, failing, config, List(milkWatch))
+      .create[IO](
+        source,
+        None,
+        MemRawStore.create(),
+        MemObservationStore.create(),
+        MemLedger.create(),
+        sink,
+        failing,
+        config,
+        List(milkWatch),
+      )
       .unsafeRunSync()
 
     val report = run.run.unsafeRunSync()
     assert(sink.delivered.get.unsafeRunSync().size == 1, "the alert genuinely went out")
     assert(report.alertsDelivered == 1)
-    assert(report.failures.exists(_.isInstanceOf[DealWatchError.StoreUnavailable]), "and the bookkeeping failure is visible")
+    assert(
+      report.failures.exists(_.isInstanceOf[DealWatchError.StoreUnavailable]),
+      "and the bookkeeping failure is visible",
+    )
   }
 }

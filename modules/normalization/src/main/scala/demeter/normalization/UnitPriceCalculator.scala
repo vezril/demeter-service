@@ -46,8 +46,10 @@ object UnitPriceCalculator {
     def free(m: scala.util.matching.Regex.Match): Boolean =
       !Multipack.findAllMatchIn(name).exists(mp => m.start >= mp.start && m.start < mp.end)
 
-    val volumes = Volume.findAllMatchIn(name).toList.filter(free).map(m => m.start -> toSize(decimal(m.group(1)), m.group(2), 1))
-    val weights = Weight.findAllMatchIn(name).toList.filter(free).map(m => m.start -> toSize(decimal(m.group(1)), m.group(2), 1))
+    val volumes =
+      Volume.findAllMatchIn(name).toList.filter(free).map(m => m.start -> toSize(decimal(m.group(1)), m.group(2), 1))
+    val weights =
+      Weight.findAllMatchIn(name).toList.filter(free).map(m => m.start -> toSize(decimal(m.group(1)), m.group(2), 1))
     val counts = Count.findAllMatchIn(name).toList.map { m =>
       val n = List(1, 2, 3, 4).flatMap(i => Option(m.group(i))).head.toInt
       m.start -> Size(BigDecimal(n), StdUnit.PerItem, n)
@@ -61,12 +63,12 @@ object UnitPriceCalculator {
 
   private def toSize(quantity: BigDecimal, unit: String, pack: Int): Size =
     unit.toLowerCase match {
-      case "ml"                                      => Size(round3(quantity / 1000), StdUnit.PerLitre, pack)
-      case "cl"                                      => Size(round3(quantity / 100), StdUnit.PerLitre, pack)
+      case "ml"                                          => Size(round3(quantity / 1000), StdUnit.PerLitre, pack)
+      case "cl"                                          => Size(round3(quantity / 100), StdUnit.PerLitre, pack)
       case "l" | "litre" | "litres" | "liter" | "liters" => Size(round3(quantity), StdUnit.PerLitre, pack)
       case "g" | "gramme" | "grammes" | "gram" | "grams" => Size(round3(quantity / 1000), StdUnit.PerKg, pack)
-      case "kg"                                      => Size(round3(quantity), StdUnit.PerKg, pack)
-      case other                                     => sys.error(s"unreachable size unit: $other")
+      case "kg"                                          => Size(round3(quantity), StdUnit.PerKg, pack)
+      case other                                         => sys.error(s"unreachable size unit: $other")
     }
 
   private def round3(d: BigDecimal): BigDecimal = d.setScale(3, RoundingMode.HALF_EVEN)

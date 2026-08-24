@@ -53,7 +53,7 @@ final class NtfySink[F[_]](
     locale: Locale,
     post: (String, String) => F[Either[DealWatchError, Unit]],
 ) extends AlertSink[F] {
-  val name: SinkName = SinkName("ntfy")
+  val name: SinkName                                         = SinkName("ntfy")
   def deliver(alert: Alert): F[Either[DealWatchError, Unit]] = post(topicUrl, alert.renderPlain(locale))
 }
 

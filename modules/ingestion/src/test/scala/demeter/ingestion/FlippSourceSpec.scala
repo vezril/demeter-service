@@ -16,8 +16,9 @@ import org.scalatest.funsuite.AnyFunSuite
   */
 final class FlippSourceSpec extends AnyFunSuite {
 
-  private val postal      = PostalCode.parse("H2X 1Y6").toOption.get
-  private val fastConfig  = HttpPolicyConfig(backoffBase = 1.milli, backoffCap = 2.millis, rateLimit = 1000, rateWindow = 1.second)
+  private val postal = PostalCode.parse("H2X 1Y6").toOption.get
+  private val fastConfig =
+    HttpPolicyConfig(backoffBase = 1.milli, backoffCap = 2.millis, rateLimit = 1000, rateWindow = 1.second)
 
   private def source(transport: HttpTransport[IO], config: HttpPolicyConfig = fastConfig): FlippSource[IO] = {
     val policy = Random.scalaUtilRandom[IO].flatMap(implicit r => HttpPolicy.create[IO](config)).unsafeRunSync()
@@ -30,7 +31,9 @@ final class FlippSourceSpec extends AnyFunSuite {
   private def counting(status: Int, body: String): (Ref[IO, Int], HttpTransport[IO]) = {
     val counter = Ref.of[IO, Int](0).unsafeRunSync()
     val t: HttpTransport[IO] = (url, _) =>
-      counter.update(_ + 1) *> IO.pure(Right(HttpResponse(status, body.getBytes(StandardCharsets.UTF_8), "application/json")))
+      counter.update(_ + 1) *> IO.pure(
+        Right(HttpResponse(status, body.getBytes(StandardCharsets.UTF_8), "application/json"))
+      )
     (counter, t)
   }
 
@@ -84,8 +87,8 @@ final class FlippSourceSpec extends AnyFunSuite {
   // --- raw + parsed (@boundary/@contract, 01.1/01.2) ---
 
   test("a source hands back the raw bytes alongside the parsed flyers") {
-    val body               = new String(Fixtures.bytes("flyers.sample.json"), StandardCharsets.UTF_8)
-    val Right(listing)     = source(constant(200, body)).flyers(postal, Locale.EnCa).unsafeRunSync()
+    val body           = new String(Fixtures.bytes("flyers.sample.json"), StandardCharsets.UTF_8)
+    val Right(listing) = source(constant(200, body)).flyers(postal, Locale.EnCa).unsafeRunSync()
     assert(listing.flyers.size == 2)
     assert(new String(listing.raw.bytes, StandardCharsets.UTF_8) == body)
     assert(listing.raw.url == FlippUrls.flyers(FlippUrls.DefaultBase, postal, Locale.EnCa))
@@ -104,8 +107,8 @@ final class FlippSourceSpec extends AnyFunSuite {
   }
 
   test("null current_price yields a price-absent item, not a failure") {
-    val body           = s"""{"items":[${itemJson(Some("Widget"), price = "null", saleStory = "\"50% off\"")}]}"""
-    val Right(items)   = source(constant(200, body)).items(FlyerId(900), postal, Locale.EnCa).unsafeRunSync()
+    val body         = s"""{"items":[${itemJson(Some("Widget"), price = "null", saleStory = "\"50% off\"")}]}"""
+    val Right(items) = source(constant(200, body)).items(FlyerId(900), postal, Locale.EnCa).unsafeRunSync()
     assert(items.items.size == 1)
     assert(items.items.head.currentPrice.isEmpty)
     assert(items.items.head.saleStory.contains("50% off"))
@@ -119,9 +122,9 @@ final class FlippSourceSpec extends AnyFunSuite {
   }
 
   test("individual malformed items are dropped and counted, not fatal") {
-    val good = (1 to 8).map(_ => itemJson(Some("Widget")))
-    val bad  = (1 to 2).map(_ => itemJson(None))
-    val body = s"""{"items":[${(good ++ bad).mkString(",")}]}"""
+    val good         = (1 to 8).map(_ => itemJson(Some("Widget")))
+    val bad          = (1 to 2).map(_ => itemJson(None))
+    val body         = s"""{"items":[${(good ++ bad).mkString(",")}]}"""
     val Right(items) = source(constant(200, body)).items(FlyerId(900), postal, Locale.EnCa).unsafeRunSync()
     assert(items.items.size == 8)
     assert(items.dropped == 2)
@@ -136,7 +139,7 @@ final class FlippSourceSpec extends AnyFunSuite {
   }
 
   test("flyer image pages are not retained") {
-    val body         = s"""{"items":[${itemJson(Some("Widget"))}], "pages":[{"image_url":"http://f.wishabi.net/p.jpg"}]}"""
+    val body = s"""{"items":[${itemJson(Some("Widget"))}], "pages":[{"image_url":"http://f.wishabi.net/p.jpg"}]}"""
     val Right(items) = source(constant(200, body)).items(FlyerId(900), postal, Locale.EnCa).unsafeRunSync()
     assert(items.items.size == 1)
     assert(!new String(items.items.head.rawName).contains("jpg"))

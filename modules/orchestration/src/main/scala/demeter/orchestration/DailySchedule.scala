@@ -53,7 +53,9 @@ final case class DailySchedule(
     day.toLocalDate.atTime(hour, minute).atZone(zone)
 
   def describe: String = {
-    val days = if (daysOfWeek == DailySchedule.EveryDay) "every day" else daysOfWeek.toList.sorted.map(_.toString.take(3).toLowerCase).mkString(",")
+    val days =
+      if (daysOfWeek == DailySchedule.EveryDay) "every day"
+      else daysOfWeek.toList.sorted.map(_.toString.take(3).toLowerCase).mkString(",")
     f"$hour%02d:$minute%02d $zone ($days)"
   }
 }
@@ -69,8 +71,16 @@ object DailySchedule {
         for {
           m <- number(min, 0, 59, "minute")
           h <- number(hr, 0, 23, "hour")
-          _ <- Either.cond(dom == "*", (), s"day-of-month must be '*' (got '$dom'): only a daily or weekly schedule is supported")
-          _ <- Either.cond(mon == "*", (), s"month must be '*' (got '$mon'): only a daily or weekly schedule is supported")
+          _ <- Either.cond(
+            dom == "*",
+            (),
+            s"day-of-month must be '*' (got '$dom'): only a daily or weekly schedule is supported",
+          )
+          _ <- Either.cond(
+            mon == "*",
+            (),
+            s"month must be '*' (got '$mon'): only a daily or weekly schedule is supported",
+          )
           d <- daysOf(dow)
         } yield DailySchedule(m, h, d, zone)
       case _ =>
@@ -89,11 +99,12 @@ object DailySchedule {
       val parsed = field.split(",").toList.map {
         case r if r.contains("-") =>
           r.split("-", 2).toList match {
-            case a :: b :: Nil => (dayOf(a), dayOf(b)) match {
-              case (Right(x), Right(y)) => Right(rangeBetween(x, y))
-              case (Left(e), _)         => Left(e)
-              case (_, Left(e))         => Left(e)
-            }
+            case a :: b :: Nil =>
+              (dayOf(a), dayOf(b)) match {
+                case (Right(x), Right(y)) => Right(rangeBetween(x, y))
+                case (Left(e), _)         => Left(e)
+                case (_, Left(e))         => Left(e)
+              }
             case _ => Left(s"malformed day-of-week range '$r'")
           }
         case single => dayOf(single).map(Set(_))
@@ -106,11 +117,13 @@ object DailySchedule {
 
   /** cron numbers Sunday as both 0 and 7. */
   private def dayOf(s: String): Either[String, DayOfWeek] =
-    Try(s.trim.toInt).toOption.flatMap {
-      case 0 | 7 => Some(DayOfWeek.SUNDAY)
-      case n if n >= 1 && n <= 6 => Some(DayOfWeek.of(n))
-      case _ => None
-    }.toRight(s"day-of-week must be 0..7 with 0 or 7 meaning Sunday (got '$s')")
+    Try(s.trim.toInt).toOption
+      .flatMap {
+        case 0 | 7                 => Some(DayOfWeek.SUNDAY)
+        case n if n >= 1 && n <= 6 => Some(DayOfWeek.of(n))
+        case _                     => None
+      }
+      .toRight(s"day-of-week must be 0..7 with 0 or 7 meaning Sunday (got '$s')")
 
   private def rangeBetween(from: DayOfWeek, to: DayOfWeek): Set[DayOfWeek] = {
     val all = (0 until 7).map(i => from.plus(i.toLong)).toList

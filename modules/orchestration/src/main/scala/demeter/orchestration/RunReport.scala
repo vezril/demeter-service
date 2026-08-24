@@ -54,7 +54,9 @@ object DriftAlarm {
 
   /** Schema drift: the decode-failure rate for a source crossed the threshold. */
   final case class DecodeDrift(source: SourceName, rate: Double, threshold: Double)
-      extends DriftAlarm(f"$source%s decode-failure rate ${rate * 100}%.1f%% exceeds ${threshold * 100}%.1f%% — likely schema drift")
+      extends DriftAlarm(
+        f"$source%s decode-failure rate ${rate * 100}%.1f%% exceeds ${threshold * 100}%.1f%% — likely schema drift"
+      )
 
   /** Silent breakage: a normally-productive source returned ~nothing, with no transport error. */
   final case class ZeroResult(source: SourceName, expectedAtLeast: Int)
@@ -83,7 +85,9 @@ object Observability {
       thresholds: DriftThresholds = DriftThresholds(),
   ): List[DriftAlarm] = {
     val decode =
-      Option.when(report.itemsParsed + report.itemsDropped > 0 && report.decodeFailureRate > thresholds.decodeFailureRate)(
+      Option.when(
+        report.itemsParsed + report.itemsDropped > 0 && report.decodeFailureRate > thresholds.decodeFailureRate
+      )(
         DriftAlarm.DecodeDrift(source, report.decodeFailureRate, thresholds.decodeFailureRate)
       )
 
@@ -94,7 +98,9 @@ object Observability {
       )
 
     val alertVolume =
-      Option.when(report.matches >= thresholds.alertVolumeMinMatches && report.alertsDelivered == 0 && report.alertsSuppressed == 0)(
+      Option.when(
+        report.matches >= thresholds.alertVolumeMinMatches && report.alertsDelivered == 0 && report.alertsSuppressed == 0
+      )(
         DriftAlarm.AlertVolumeCollapse(report.matches)
       )
 

@@ -24,15 +24,15 @@ final case class PriceToken(amount: Money, unit: Option[PriceUnit])
 object PriceTextParser {
 
   private val UnitPatterns: List[(String, PriceUnit)] = List(
-    "/\\s*lb\\b"          -> PriceUnit.PerLb,
-    "\\bper\\s+lb\\b"     -> PriceUnit.PerLb,
-    "/\\s*livre\\b"       -> PriceUnit.PerLb,
-    "/\\s*100\\s*g\\b"    -> PriceUnit.Per100g,
-    "/\\s*kg\\b"          -> PriceUnit.PerKg,
-    "\\bper\\s+kg\\b"     -> PriceUnit.PerKg,
-    "\\bea\\.?\\b"        -> PriceUnit.Each,
-    "\\beach\\b"          -> PriceUnit.Each,
-    "\\bchacun[e]?\\b"    -> PriceUnit.Each,
+    "/\\s*lb\\b"       -> PriceUnit.PerLb,
+    "\\bper\\s+lb\\b"  -> PriceUnit.PerLb,
+    "/\\s*livre\\b"    -> PriceUnit.PerLb,
+    "/\\s*100\\s*g\\b" -> PriceUnit.Per100g,
+    "/\\s*kg\\b"       -> PriceUnit.PerKg,
+    "\\bper\\s+kg\\b"  -> PriceUnit.PerKg,
+    "\\bea\\.?\\b"     -> PriceUnit.Each,
+    "\\beach\\b"       -> PriceUnit.Each,
+    "\\bchacun[e]?\\b" -> PriceUnit.Each,
   )
 
   private val CentsPattern  = """(?i)^\s*(\d+)\s*(?:¢|cents?)\s*$""".r

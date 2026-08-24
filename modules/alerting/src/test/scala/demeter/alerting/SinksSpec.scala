@@ -31,16 +31,17 @@ final class SinksSpec extends AnyFunSuite {
   }
 
   private def succeeding(sinkName: String, calls: Ref[IO, List[String]]) = new AlertSink[IO] {
-    def name: SinkName = SinkName(sinkName)
+    def name: SinkName                                      = SinkName(sinkName)
     def deliver(a: Alert): IO[Either[DealWatchError, Unit]] = calls.update(_ :+ sinkName).as(Right(()))
   }
 
   // --- 05.4 Home Assistant ---
 
   test("a webhook delivery posts the structured alert to the configured URL") {
-    val (log, post)    = recorder()
-    val (_, publish)   = recorder()
-    val sink           = new HomeAssistantSink[IO](HaConfig(webhookUrl = Some("http://ha.local/api/webhook/deals")), post, publish)
+    val (log, post)  = recorder()
+    val (_, publish) = recorder()
+    val sink =
+      new HomeAssistantSink[IO](HaConfig(webhookUrl = Some("http://ha.local/api/webhook/deals")), post, publish)
     assert(sink.deliver(dealAlert).unsafeRunSync() == Right(()))
 
     val List((target, body)) = log.get.unsafeRunSync()

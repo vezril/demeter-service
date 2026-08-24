@@ -10,28 +10,28 @@ sealed abstract class DealVerdict extends Product with Serializable {
 
   /** Ordering used by 05.1's `requireSale` gate: anything at least Notable is a real sale. */
   def isNotableOrBetter: Boolean = this match {
-    case DealVerdict.BestEver(_)      => true
-    case DealVerdict.BelowUsual(_)    => true
-    case DealVerdict.Notable          => true
-    case DealVerdict.AtOrAboveUsual   => false
-    case DealVerdict.Unknown          => false
+    case DealVerdict.BestEver(_)    => true
+    case DealVerdict.BelowUsual(_)  => true
+    case DealVerdict.Notable        => true
+    case DealVerdict.AtOrAboveUsual => false
+    case DealVerdict.Unknown        => false
   }
 
   def phrase: String = this match {
-    case DealVerdict.BestEver(weeks)  => s"cheapest in $weeks weeks"
-    case DealVerdict.BelowUsual(pct)  => s"$pct% below usual"
-    case DealVerdict.Notable          => "a real sale"
-    case DealVerdict.AtOrAboveUsual   => "not actually a deal"
-    case DealVerdict.Unknown          => "no price history yet"
+    case DealVerdict.BestEver(weeks) => s"cheapest in $weeks weeks"
+    case DealVerdict.BelowUsual(pct) => s"$pct% below usual"
+    case DealVerdict.Notable         => "a real sale"
+    case DealVerdict.AtOrAboveUsual  => "not actually a deal"
+    case DealVerdict.Unknown         => "no price history yet"
   }
 }
 
 object DealVerdict {
-  final case class BestEver(sinceWeeks: Int)      extends DealVerdict
+  final case class BestEver(sinceWeeks: Int)       extends DealVerdict
   final case class BelowUsual(pctBelowMedian: Int) extends DealVerdict
-  case object Notable        extends DealVerdict
-  case object AtOrAboveUsual extends DealVerdict
-  case object Unknown        extends DealVerdict
+  case object Notable                              extends DealVerdict
+  case object AtOrAboveUsual                       extends DealVerdict
+  case object Unknown                              extends DealVerdict
 }
 
 /** Thresholds are config (08.4), not magic constants. */

@@ -7,9 +7,9 @@ ThisBuild / scalacOptions ++= Seq(
   "-feature",
   "-unchecked",
   "-Wunused:imports",
-  "-Xsource:3",            // ease a future Scala 3 migration
+  "-Xsource:3",                               // ease a future Scala 3 migration
   "-Xsource-features:case-apply-copy-access", // private case-class ctor => private apply/copy (Scala 3 semantics)
-  "-Ywarn-value-discard"
+  "-Ywarn-value-discard",
 )
 
 // The @boundary suites in persistence, watchlist, and alerting all talk to the
@@ -21,12 +21,12 @@ Global / concurrentRestrictions += Tags.limit(Tags.Test, 1)
 // Common settings every module shares.
 lazy val commonSettings = Seq(
   libraryDependencies ++= Seq(
-    scalaTest      % Test,
-    scalaTestPlus  % Test,
-    scalaCheck     % Test
+    scalaTest     % Test,
+    scalaTestPlus % Test,
+    scalaCheck    % Test,
   ),
   // Stryker4s: focus mutation on pure units; tune per-module later.
-  Test / parallelExecution := true
+  Test / parallelExecution := true,
 )
 
 // ---- modules, in dependency order (mirrors specs/ contexts) ----
@@ -93,8 +93,14 @@ lazy val orchestration = (project in file("modules/orchestration"))
   .settings(Compile / mainClass := Some("demeter.orchestration.Main"))
   .settings(libraryDependencies ++= Seq(cats, catsEffect, pureconfig, log4cats, logback))
   .dependsOn(
-    foundations, ingestion, normalization, persistence,
-    watchlist, alerting, enrichment, pricehistory
+    foundations,
+    ingestion,
+    normalization,
+    persistence,
+    watchlist,
+    alerting,
+    enrichment,
+    pricehistory,
   )
 
 // Aggregate root — build/test everything from here.
@@ -105,6 +111,13 @@ lazy val root = (project in file("."))
   // drives it per module instead.
   .settings(stryker / aggregate := false)
   .aggregate(
-    foundations, ingestion, normalization, persistence,
-    watchlist, alerting, enrichment, pricehistory, orchestration
+    foundations,
+    ingestion,
+    normalization,
+    persistence,
+    watchlist,
+    alerting,
+    enrichment,
+    pricehistory,
+    orchestration,
   )

@@ -37,14 +37,18 @@ final class StoresIntegrationSpec extends AnyFunSuite {
   private val pc    = PostalCode.parse("H2X1Y6").toOption.get
 
   private def rawStore(dedup: Option[FiniteDuration] = None) = new DoobieRawResponseStore[IO](PgTest.xa, dedup)
-  private def obsStore                                        = new DoobieObservationStore[IO](PgTest.xa)
-  private def ledger                                          = new DoobieFlyerLedger[IO](PgTest.xa, maxAge = 7.days)
+  private def obsStore                                       = new DoobieObservationStore[IO](PgTest.xa)
+  private def ledger                                         = new DoobieFlyerLedger[IO](PgTest.xa, maxAge = 7.days)
 
   private def raw(bytes: Array[Byte], at: Instant = now) =
     RawResponse(bytes, "application/json", at, "https://backflipp.wishabi.com/flipp/flyers")
 
   private def putRaw(bytes: Array[Byte] = """{"x":1}""".getBytes): RawResponseId =
-    rawStore().put(raw(bytes), SourceName("flipp"), ResponseKind.FlyerItems, pc, Locale.EnCa).unsafeRunSync().toOption.get
+    rawStore()
+      .put(raw(bytes), SourceName("flipp"), ResponseKind.FlyerItems, pc, Locale.EnCa)
+      .unsafeRunSync()
+      .toOption
+      .get
 
   private def obs(
       key: String = "v1:k1",
@@ -84,7 +88,11 @@ final class StoresIntegrationSpec extends AnyFunSuite {
     val cols = sql"""SELECT column_name FROM information_schema.columns
                      WHERE table_name = 'price_observation'
                        AND column_name IN ('confidence','price_confidence','match_confidence')"""
-      .query[String].to[List].transact(PgTest.xa).unsafeRunSync().sorted
+      .query[String]
+      .to[List]
+      .transact(PgTest.xa)
+      .unsafeRunSync()
+      .sorted
     assert(cols == List("match_confidence", "price_confidence"), s"unexpected columns: $cols")
   }
 
@@ -103,8 +111,9 @@ final class StoresIntegrationSpec extends AnyFunSuite {
 
   pgTest("stored bytes are returned byte-for-byte") {
     val bytes = Array.range(0, 256).map(_.toByte) ++ "flyer 🍁 bytes".getBytes("UTF-8")
-    val id    = rawStore().put(raw(bytes), SourceName("flipp"), ResponseKind.Flyers, pc, Locale.EnCa).unsafeRunSync().toOption.get
-    val back  = rawStore().get(id).unsafeRunSync().toOption.get
+    val id =
+      rawStore().put(raw(bytes), SourceName("flipp"), ResponseKind.Flyers, pc, Locale.EnCa).unsafeRunSync().toOption.get
+    val back = rawStore().get(id).unsafeRunSync().toOption.get
     assert(back.bytes.sameElements(bytes))
     assert(back.url == "https://backflipp.wishabi.com/flipp/flyers")
   }
@@ -112,23 +121,36 @@ final class StoresIntegrationSpec extends AnyFunSuite {
   pgTest("identical fetches can be deduplicated by content hash") {
     val store = rawStore(dedup = Some(2.hours))
     val bytes = """{"same":"body"}""".getBytes
-    val id1 = store.put(raw(bytes, now), SourceName("flipp"), ResponseKind.Flyers, pc, Locale.EnCa).unsafeRunSync().toOption.get
-    val id2 = store.put(raw(bytes, now.plusSeconds(3600)), SourceName("flipp"), ResponseKind.Flyers, pc, Locale.EnCa).unsafeRunSync().toOption.get
+    val id1 =
+      store.put(raw(bytes, now), SourceName("flipp"), ResponseKind.Flyers, pc, Locale.EnCa).unsafeRunSync().toOption.get
+    val id2 = store
+      .put(raw(bytes, now.plusSeconds(3600)), SourceName("flipp"), ResponseKind.Flyers, pc, Locale.EnCa)
+      .unsafeRunSync()
+      .toOption
+      .get
     assert(id1 == id2)
   }
 
   pgTest("dedup off by default: identical fetches create distinct rows") {
     val store = rawStore()
     val bytes = """{"same":"body"}""".getBytes
-    val id1   = store.put(raw(bytes), SourceName("flipp"), ResponseKind.Flyers, pc, Locale.EnCa).unsafeRunSync().toOption.get
-    val id2   = store.put(raw(bytes), SourceName("flipp"), ResponseKind.Flyers, pc, Locale.EnCa).unsafeRunSync().toOption.get
+    val id1 =
+      store.put(raw(bytes), SourceName("flipp"), ResponseKind.Flyers, pc, Locale.EnCa).unsafeRunSync().toOption.get
+    val id2 =
+      store.put(raw(bytes), SourceName("flipp"), ResponseKind.Flyers, pc, Locale.EnCa).unsafeRunSync().toOption.get
     assert(id1 != id2)
   }
 
   pgTest("replay streams every archived response for a source and kind") {
     val store = rawStore()
-    (1 to 5).foreach(i => store.put(raw(s"""{"n":$i}""".getBytes), SourceName("flipp"), ResponseKind.FlyerItems, pc, Locale.EnCa).unsafeRunSync())
-    store.put(raw("""{"other":1}""".getBytes), SourceName("flipp"), ResponseKind.Flyers, pc, Locale.EnCa).unsafeRunSync()
+    (1 to 5).foreach(i =>
+      store
+        .put(raw(s"""{"n":$i}""".getBytes), SourceName("flipp"), ResponseKind.FlyerItems, pc, Locale.EnCa)
+        .unsafeRunSync()
+    )
+    store
+      .put(raw("""{"other":1}""".getBytes), SourceName("flipp"), ResponseKind.Flyers, pc, Locale.EnCa)
+      .unsafeRunSync()
     val streamed = store.stream(SourceName("flipp"), ResponseKind.FlyerItems).compile.toList.unsafeRunSync()
     assert(streamed.size == 5)
   }
@@ -148,8 +170,8 @@ final class StoresIntegrationSpec extends AnyFunSuite {
     val rawId    = putRaw()
     val existing = (1 to 2).map(i => obs(key = s"v1:k$i")).toList
     existing.foreach(o => obsStore.save(o, rawId).unsafeRunSync())
-    val batch          = (1 to 10).map(i => obs(key = s"v1:k$i")).toList
-    val Right(report)  = obsStore.saveAll(batch, rawId).unsafeRunSync()
+    val batch         = (1 to 10).map(i => obs(key = s"v1:k$i")).toList
+    val Right(report) = obsStore.saveAll(batch, rawId).unsafeRunSync()
     assert(report == SaveReport(inserted = 8, skippedDuplicate = 2, failed = 0))
   }
 
@@ -157,7 +179,10 @@ final class StoresIntegrationSpec extends AnyFunSuite {
     val rawId = putRaw()
     obsStore.save(obs(), rawId).unsafeRunSync()
     val (en, qty) = sql"SELECT display_name_en, size_qty FROM product WHERE key = 'v1:k1'"
-      .query[(Option[String], Option[BigDecimal])].unique.transact(PgTest.xa).unsafeRunSync()
+      .query[(Option[String], Option[BigDecimal])]
+      .unique
+      .transact(PgTest.xa)
+      .unsafeRunSync()
     assert(en.contains("Natrel Milk 4 L"))
     assert(qty.contains(BigDecimal(4)))
   }
@@ -165,8 +190,12 @@ final class StoresIntegrationSpec extends AnyFunSuite {
   pgTest("a null effective price is storable and queryable") {
     val rawId = putRaw()
     obsStore.save(obs(cents = None, basis = PriceBasis.PercentOffUnknown), rawId).unsafeRunSync()
-    val promos = sql"""SELECT count(*) FROM price_observation WHERE effective_cents IS NULL AND price_basis = 'PercentOffUnknown'"""
-      .query[Int].unique.transact(PgTest.xa).unsafeRunSync()
+    val promos =
+      sql"""SELECT count(*) FROM price_observation WHERE effective_cents IS NULL AND price_basis = 'PercentOffUnknown'"""
+        .query[Int]
+        .unique
+        .transact(PgTest.xa)
+        .unsafeRunSync()
     assert(promos == 1)
   }
 
@@ -174,7 +203,10 @@ final class StoresIntegrationSpec extends AnyFunSuite {
     val rawId = putRaw("""{"trace":"me"}""".getBytes)
     obsStore.save(obs(), rawId).unsafeRunSync()
     val linked = sql"""SELECT r.body FROM price_observation o JOIN raw_response r ON r.id = o.raw_response_id"""
-      .query[Array[Byte]].unique.transact(PgTest.xa).unsafeRunSync()
+      .query[Array[Byte]]
+      .unique
+      .transact(PgTest.xa)
+      .unsafeRunSync()
     assert(linked.sameElements("""{"trace":"me"}""".getBytes))
   }
 
@@ -192,7 +224,9 @@ final class StoresIntegrationSpec extends AnyFunSuite {
   pgTest("current observations return only those active at a given time") {
     val rawId = putRaw()
     obsStore.save(obs(key = "v1:active", validFrom = jul23, validTo = jul30), rawId).unsafeRunSync()
-    obsStore.save(obs(key = "v1:expired", flyerId = 901L, validFrom = jul16, validTo = jul23.minusSeconds(1)), rawId).unsafeRunSync()
+    obsStore
+      .save(obs(key = "v1:expired", flyerId = 901L, validFrom = jul16, validTo = jul23.minusSeconds(1)), rawId)
+      .unsafeRunSync()
     val active = obsStore.currentObservationsFor(MerchantId(100), now).compile.toList.unsafeRunSync()
     assert(active.map(_.productKey.value) == List("v1:active"))
   }
@@ -230,9 +264,9 @@ final class StoresIntegrationSpec extends AnyFunSuite {
     ledger.selectToFetch(List(f), now).unsafeRunSync()
     ledger.markFetched(f.id, (jul23, jul30), rawId).unsafeRunSync()
 
-    val later = now.plus(1, ChronoUnit.DAYS)
+    val later    = now.plus(1, ChronoUnit.DAYS)
     val selected = ledger.selectToFetch(List(f), later).unsafeRunSync()
-    assert(selected.isEmpty) // skipped...
+    assert(selected.isEmpty)                                        // skipped...
     assert(ledger.lastSeenAt(f.id).unsafeRunSync().contains(later)) // ...but still seen
   }
 
@@ -243,7 +277,8 @@ final class StoresIntegrationSpec extends AnyFunSuite {
     ledger.markFetched(f.id, (f.validFrom, f.validTo), rawId).unsafeRunSync()
     // age the recorded fetch by rewriting fetched_at
     sql"UPDATE flyer_fetch_ledger SET fetched_at = ${now.minus(8, ChronoUnit.DAYS)}".update.run
-      .transact(PgTest.xa).unsafeRunSync()
+      .transact(PgTest.xa)
+      .unsafeRunSync()
     assert(ledger.selectToFetch(List(f), now).unsafeRunSync() == List(f))
   }
 
@@ -254,7 +289,9 @@ final class StoresIntegrationSpec extends AnyFunSuite {
     val store = rawStore()
     // archive raws whose bodies encode the observations (stub normalizer: parse cents from body)
     val bodies = List("""{"cents":250}""", """{"cents":299}""")
-    bodies.foreach(b => store.put(raw(b.getBytes), SourceName("flipp"), ResponseKind.FlyerItems, pc, Locale.EnCa).unsafeRunSync())
+    bodies.foreach(b =>
+      store.put(raw(b.getBytes), SourceName("flipp"), ResponseKind.FlyerItems, pc, Locale.EnCa).unsafeRunSync()
+    )
 
     def normalize(bytes: Array[Byte]): PriceObservation = {
       val cents = """\d+""".r.findFirstIn(new String(bytes)).get.toLong
@@ -265,9 +302,14 @@ final class StoresIntegrationSpec extends AnyFunSuite {
       store
         .stream(SourceName("flipp"), ResponseKind.FlyerItems)
         .evalMap { case (id, r) => obsStore.save(normalize(r.bytes), id) }
-        .compile.drain.unsafeRunSync()
+        .compile
+        .drain
+        .unsafeRunSync()
       sql"SELECT product_key, effective_cents FROM price_observation ORDER BY product_key"
-        .query[(String, Option[Long])].to[List].transact(PgTest.xa).unsafeRunSync()
+        .query[(String, Option[Long])]
+        .to[List]
+        .transact(PgTest.xa)
+        .unsafeRunSync()
     }
 
     val original = rebuild()

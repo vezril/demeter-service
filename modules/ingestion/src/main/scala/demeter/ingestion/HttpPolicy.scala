@@ -17,7 +17,7 @@ final case class HttpPolicyConfig(
     maxAttempts: Int = 3,
     backoffBase: FiniteDuration = 1.second,
     backoffCap: FiniteDuration = 30.seconds,
-    rateLimit: Int = 4,                          // requests per rateWindow, per source
+    rateLimit: Int = 4, // requests per rateWindow, per source
     rateWindow: FiniteDuration = 1.minute,
     userAgent: String = HttpPolicyConfig.DefaultUserAgent,
     botWallSignatures: List[String] = HttpPolicyConfig.DefaultBotWallSignatures,

@@ -19,8 +19,8 @@ object DealWatchError {
   // --- transport (boundary 01/06) ---
 
   final case class HttpStatus(code: Int, url: String) extends DealWatchError {
-    val retriable: Boolean            = code >= 500 || code == 429
-    val context: Map[String, String]  = Map("code" -> code.toString, "url" -> url)
+    val retriable: Boolean           = code >= 500 || code == 429
+    val context: Map[String, String] = Map("code" -> code.toString, "url" -> url)
   }
 
   final case class Timeout(url: String) extends DealWatchError {
@@ -35,8 +35,8 @@ object DealWatchError {
 
   /** 403 / Cloudflare challenge / captcha — the signal Flipp put the endpoint behind auth. */
   final case class BotWall(url: String, signal: String) extends DealWatchError {
-    val retriable: Boolean                = false
-    val context: Map[String, String]      = Map("url" -> url, "signal" -> signal)
+    val retriable: Boolean                  = false
+    val context: Map[String, String]        = Map("url" -> url, "signal" -> signal)
     override val operatorAttention: Boolean = true
   }
 

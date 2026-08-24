@@ -47,7 +47,14 @@ final class FixtureSource[F[_]](
         for {
           json   <- FlippDecoders.parseJson(name.value, raw.bytes)
           parsed <- FlippDecoders.decodeSearch(name.value, json)
-        } yield RawSearchResult(raw, parsed.flyerItems, parsed.ecomItems, parsed.merchants, parsed.normalizedQuery, parsed.dropped)
+        } yield RawSearchResult(
+          raw,
+          parsed.flyerItems,
+          parsed.ecomItems,
+          parsed.merchants,
+          parsed.normalizedQuery,
+          parsed.dropped,
+        )
       }
     }
 

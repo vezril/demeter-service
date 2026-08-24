@@ -72,8 +72,7 @@ final class DoobieRawResponseStore[F[_]: MonadCancelThrow](
     val insert: ConnectionIO[Long] =
       sql"""INSERT INTO raw_response (source, kind, url, postal_code, locale, fetched_at, content_type, body, body_sha256)
             VALUES (${source.value}, ${kind.dbValue}, ${raw.url}, ${postal.canonical}, $locale,
-                    ${raw.fetchedAt}, ${raw.contentType}, ${raw.bytes}, $sha)"""
-        .update
+                    ${raw.fetchedAt}, ${raw.contentType}, ${raw.bytes}, $sha)""".update
         .withUniqueGeneratedKeys[Long]("id")
 
     existing

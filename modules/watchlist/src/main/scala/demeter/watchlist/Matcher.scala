@@ -70,21 +70,24 @@ object Matcher {
     val termTokens = TextNormalizer.normalize(term, config.stopwords).tokens
     if (termTokens.isEmpty) None
     else
-      formTokens.flatMap { tokens =>
-        // every term token must be covered by some form token: exact, or JW >= threshold
-        val quality = termTokens.map { tt =>
-          if (tokens.contains(tt)) Some(1.0)
-          else
-            tokens
-              .filter(canFuzzyMatch(tt, _, config))
-              .map(jaroWinkler(tt, _))
-              .maxOption
-              .filter(_ >= config.fuzzyThreshold)
+      formTokens
+        .flatMap { tokens =>
+          // every term token must be covered by some form token: exact, or JW >= threshold
+          val quality = termTokens.map { tt =>
+            if (tokens.contains(tt)) Some(1.0)
+            else
+              tokens
+                .filter(canFuzzyMatch(tt, _, config))
+                .map(jaroWinkler(tt, _))
+                .maxOption
+                .filter(_ >= config.fuzzyThreshold)
+          }
+          if (quality.forall(_.isDefined))
+            Some((quality.flatten.sum / quality.size) * shareOfName(termTokens.size, tokens.size, config))
+          else None
         }
-        if (quality.forall(_.isDefined))
-          Some((quality.flatten.sum / quality.size) * shareOfName(termTokens.size, tokens.size, config))
-        else None
-      }.maxOption.map(TextMatch(term, _))
+        .maxOption
+        .map(TextMatch(term, _))
   }
 
   /** Whether two tokens are long enough for Jaro-Winkler to mean anything.
@@ -114,9 +117,9 @@ object Matcher {
       val aMatch  = Array.fill(a.length)(-1)
       var matches = 0
       for (i <- a.indices) {
-        val lo = math.max(0, i - window)
-        val hi = math.min(b.length - 1, i + window)
-        var j  = lo
+        val lo    = math.max(0, i - window)
+        val hi    = math.min(b.length - 1, i + window)
+        var j     = lo
         var found = false
         while (j <= hi && !found) {
           if (!bTaken(j) && a(i) == b(j)) { bTaken(j) = true; aMatch(i) = j; matches += 1; found = true }

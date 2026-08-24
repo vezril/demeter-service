@@ -34,12 +34,14 @@ object Main extends IOApp {
             components(config).use { case (source, rawStore, observations, ledger, sink, watches, alertLedger) =>
               for {
                 watchlist <- loadWatchlist(watches, log)
-                run       <- DailyRun.create[IO](source, None, rawStore, observations, ledger, sink, alertLedger, config, watchlist)
-                _         <- IO.whenA(config.schedule.runOnStart)(executeOnce(run, log).void)
+                run <- DailyRun
+                  .create[IO](source, None, rawStore, observations, ledger, sink, alertLedger, config, watchlist)
+                _ <- IO.whenA(config.schedule.runOnStart)(executeOnce(run, log).void)
                 // validated at boot, so this cannot fail here
-                schedule   = DailySchedule.parse(config.schedule.cron, config.schedule.zone)
-                               .getOrElse(throw new IllegalStateException("schedule passed validation but will not parse"))
-                _         <- loop(run, log, schedule)
+                schedule = DailySchedule
+                  .parse(config.schedule.cron, config.schedule.zone)
+                  .getOrElse(throw new IllegalStateException("schedule passed validation but will not parse"))
+                _ <- loop(run, log, schedule)
               } yield ExitCode.Success
             }
       }
@@ -64,12 +66,12 @@ object Main extends IOApp {
       schedule: DailySchedule,
   ): IO[Unit] =
     (for {
-      now  <- IO.realTimeInstant
-      next  = schedule.nextAfter(now)
-      wait  = math.max(0L, next.toEpochMilli - now.toEpochMilli).millis
-      _    <- log.info(s"next run at $next (in ${wait.toMinutes} min)")
-      _    <- IO.sleep(wait)
-      _    <- executeOnce(run, log).attempt.flatMap {
+      now <- IO.realTimeInstant
+      next = schedule.nextAfter(now)
+      wait = math.max(0L, next.toEpochMilli - now.toEpochMilli).millis
+      _ <- log.info(s"next run at $next (in ${wait.toMinutes} min)")
+      _ <- IO.sleep(wait)
+      _ <- executeOnce(run, log).attempt.flatMap {
         // a failed run must not break the loop — tomorrow still gets a turn
         case Left(e)  => log.error(s"run failed: $e")
         case Right(_) => IO.unit
@@ -112,7 +114,8 @@ object Main extends IOApp {
               ),
               schedule = ScheduleConfig(
                 cron = env.getOrElse("DEMETER_SCHEDULE_CRON", "0 6 * * *"),
-                zone = env.get("DEMETER_SCHEDULE_ZONE")
+                zone = env
+                  .get("DEMETER_SCHEDULE_ZONE")
                   .flatMap(z => scala.util.Try(java.time.ZoneId.of(z)).toOption)
                   .getOrElse(java.time.ZoneId.of("America/Montreal")),
                 runOnStart = env.get("DEMETER_SCHEDULE_RUN_ON_START").contains("true"),
@@ -137,7 +140,18 @@ object Main extends IOApp {
 
   private def components(
       config: Config
-  ): Resource[IO, (FlyerSource[IO], RawResponseStore[IO], ObservationStore[IO], FlyerLedger[IO], AlertSink[IO], WatchStore[IO], AlertLedger[IO])] =
+  ): Resource[
+    IO,
+    (
+        FlyerSource[IO],
+        RawResponseStore[IO],
+        ObservationStore[IO],
+        FlyerLedger[IO],
+        AlertSink[IO],
+        WatchStore[IO],
+        AlertLedger[IO],
+    ),
+  ] =
     for {
       client <- EmberClientBuilder.default[IO].build
       xa     <- transactor(config)
@@ -147,7 +161,7 @@ object Main extends IOApp {
       // only opened when a topic is actually configured — no broker connection
       // is made for a webhook-only deployment
       publish <- mqttPublisher(config)
-      sink   = buildSink(config, client, publish)
+      sink = buildSink(config, client, publish)
     } yield (
       source,
       new DoobieRawResponseStore[IO](xa),

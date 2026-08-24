@@ -36,8 +36,8 @@ final class PcExpressSource[F[_]](
 )(implicit F: Temporal[F])
     extends EnrichmentSource[F] {
 
-  val name: SourceName                   = SourceName("pcexpress")
-  val merchantsCovered: Set[MerchantId]  = config.banners.keySet
+  val name: SourceName                  = SourceName("pcexpress")
+  val merchantsCovered: Set[MerchantId] = config.banners.keySet
 
   def lookup(query: String, near: PostalCode, locale: Locale): F[Either[DealWatchError, List[EnrichedPrice]]] =
     merchantsCovered.toList match {
@@ -45,7 +45,9 @@ final class PcExpressSource[F[_]](
       case merchants =>
         merchants
           .traverse(m => lookupBanner(query, near, locale, m))
-          .map(results => results.collectFirst { case Left(e) => e }.toLeft(results.collect { case Right(ps) => ps }.flatten))
+          .map(results =>
+            results.collectFirst { case Left(e) => e }.toLeft(results.collect { case Right(ps) => ps }.flatten)
+          )
     }
 
   def lookupBanner(

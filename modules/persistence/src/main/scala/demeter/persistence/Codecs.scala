@@ -16,7 +16,13 @@ object Codecs {
   implicit val priceBasisMeta: Meta[PriceBasis] = enumMeta[PriceBasis](
     "price_basis",
     _.toString,
-    List(PriceBasis.ScalarPrice, PriceBasis.MultiBuyUnit, PriceBasis.PercentOffUnknown, PriceBasis.ParsedFromText, PriceBasis.Unknown),
+    List(
+      PriceBasis.ScalarPrice,
+      PriceBasis.MultiBuyUnit,
+      PriceBasis.PercentOffUnknown,
+      PriceBasis.ParsedFromText,
+      PriceBasis.Unknown,
+    ),
   )
 
   implicit val confidenceMeta: Meta[Confidence] =

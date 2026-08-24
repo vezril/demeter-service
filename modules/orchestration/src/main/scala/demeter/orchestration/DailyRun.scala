@@ -44,10 +44,10 @@ final class DailyRun[F[_]](
       report    <- Ref.of[F, RunReport](RunReport())
       // Rehydrate what has already been alerted BEFORE matching. Without this a
       // restart re-alerts every deal still inside its flyer window (05.2).
-      _         <- rehydrateAlertState(startedAt)
-      _         <- listAndProcess(report)
-      endedAt   <- C.realTime
-      finished  <- report.updateAndGet(r => r.copy(elapsed = Some(endedAt - startedAt)))
+      _        <- rehydrateAlertState(startedAt)
+      _        <- listAndProcess(report)
+      endedAt  <- C.realTime
+      finished <- report.updateAndGet(r => r.copy(elapsed = Some(endedAt - startedAt)))
     } yield finished
 
   private def rehydrateAlertState(startedAt: scala.concurrent.duration.FiniteDuration): F[Unit] = {
@@ -61,13 +61,13 @@ final class DailyRun[F[_]](
         case None => F.unit // degraded; the report already says so
         case Some(listing) =>
           for {
-            _        <- observations.upsertMerchants(listing.merchants)
-            _        <- merchantNames.update(_ ++ listing.merchants.map(m => m.id -> m.name).toMap)
-            _        <- report.update(_.copy(flyersListed = listing.flyers.size))
-            toFetch  <- ledger.selectToFetch(listing.flyers, now)
-            _        <- report.update(_.copy(flyersSelected = toFetch.size))
-            _        <- fetchFlyers(toFetch, now, report)
-            _        <- matchAndAlert(now, report)
+            _       <- observations.upsertMerchants(listing.merchants)
+            _       <- merchantNames.update(_ ++ listing.merchants.map(m => m.id -> m.name).toMap)
+            _       <- report.update(_.copy(flyersListed = listing.flyers.size))
+            toFetch <- ledger.selectToFetch(listing.flyers, now)
+            _       <- report.update(_.copy(flyersSelected = toFetch.size))
+            _       <- fetchFlyers(toFetch, now, report)
+            _       <- matchAndAlert(now, report)
           } yield ()
       }
     }
@@ -79,7 +79,11 @@ final class DailyRun[F[_]](
       case Left(error) =>
         val decision = DegradationPolicy.decide(error, fallbackSource.isDefined, essential = true)
         report.update(r =>
-          r.copy(degraded = r.degraded :+ DegradedSource(source.name, error), failures = r.failures :+ error, partial = true)
+          r.copy(
+            degraded = r.degraded :+ DegradedSource(source.name, error),
+            failures = r.failures :+ error,
+            partial = true,
+          )
         ) *> {
           decision match {
             case Degradation.UseFallbackAndAlert =>
@@ -171,7 +175,7 @@ final class DailyRun[F[_]](
       verdict = DealScorer.scoreDeal(m.observation, stats, None, config.deals)
       _ <- DealDecision.decide(m, verdict) match {
         case AlertDecision.Suppress(why) => report.update(_.withSuppression(why.message))
-        case AlertDecision.Alert(deal) => deliverIfNew(deal, now, report)
+        case AlertDecision.Alert(deal)   => deliverIfNew(deal, now, report)
       }
     } yield ()
 
@@ -218,6 +222,16 @@ object DailyRun {
       alerts    <- Ref.of[F, Map[AlertKey, AlertRecord]](Map.empty)
       merchants <- Ref.of[F, Map[MerchantId, String]](Map.empty)
     } yield new DailyRun(
-      source, fallbackSource, rawStore, observations, ledger, sink, config, watchlist, alertLedger, alerts, merchants,
+      source,
+      fallbackSource,
+      rawStore,
+      observations,
+      ledger,
+      sink,
+      config,
+      watchlist,
+      alertLedger,
+      alerts,
+      merchants,
     )
 }

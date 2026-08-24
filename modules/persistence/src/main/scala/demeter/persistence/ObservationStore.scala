@@ -37,10 +37,8 @@ final class DoobieObservationStore[F[_]: MonadCancelThrow](xa: Transactor[F]) ex
 
   def upsertMerchants(merchants: List[Merchant]): F[Either[DealWatchError, Unit]] =
     merchants
-      .traverse_(m =>
-        sql"""INSERT INTO merchant (id, name) VALUES (${m.id.value}, ${m.name})
-              ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name""".update.run
-      )
+      .traverse_(m => sql"""INSERT INTO merchant (id, name) VALUES (${m.id.value}, ${m.name})
+              ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name""".update.run)
       .transact(xa)
       .map(_ => Right(()): Either[DealWatchError, Unit])
       .recover { case e => Left(DealWatchError.StoreUnavailable(e.toString)) }

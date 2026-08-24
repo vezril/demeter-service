@@ -33,7 +33,7 @@ final class DailyScheduleSpec extends AnyFunSuite with ScalaCheckPropertyChecks 
   }
 
   test("the boundary is strict: firing exactly now schedules the NEXT one, never a double-fire") {
-    val s      = sched("0 6 * * *")
+    val s       = sched("0 6 * * *")
     val exactly = at("2026-07-23T10:00:00Z") // 06:00 EDT precisely
     assert(s.nextAfter(exactly) == at("2026-07-24T10:00:00Z"))
   }
@@ -56,8 +56,10 @@ final class DailyScheduleSpec extends AnyFunSuite with ScalaCheckPropertyChecks 
 
   test("day-of-week lists and ranges are supported, Sunday counted as either 0 or 7") {
     assert(sched("0 6 * * 1,4").daysOfWeek == Set(DayOfWeek.MONDAY, DayOfWeek.THURSDAY))
-    assert(sched("0 6 * * 1-5").daysOfWeek ==
-      Set(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY))
+    assert(
+      sched("0 6 * * 1-5").daysOfWeek ==
+        Set(DayOfWeek.MONDAY, DayOfWeek.TUESDAY, DayOfWeek.WEDNESDAY, DayOfWeek.THURSDAY, DayOfWeek.FRIDAY)
+    )
     assert(sched("0 6 * * 0").daysOfWeek == Set(DayOfWeek.SUNDAY))
     assert(sched("0 6 * * 7").daysOfWeek == Set(DayOfWeek.SUNDAY))
   }

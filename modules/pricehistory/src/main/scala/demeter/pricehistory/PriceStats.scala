@@ -16,8 +16,8 @@ import demeter.foundations._
 final case class PriceStats(
     key: ProductKey,
     window: Duration,
-    n: Int,          // every observation in the window, priced or not
-    pricedN: Int,    // the subset the numeric stats are computed from
+    n: Int,       // every observation in the window, priced or not
+    pricedN: Int, // the subset the numeric stats are computed from
     weightedMedian: Option[Money],
     min: Option[Money],
     max: Option[Money],
@@ -30,9 +30,9 @@ final case class PriceStats(
 sealed abstract class Provenance extends Product with Serializable
 
 object Provenance {
-  case object FirstParty   extends Provenance
-  case object Hammer       extends Provenance
-  case object HammerFuzzy  extends Provenance
+  case object FirstParty  extends Provenance
+  case object Hammer      extends Provenance
+  case object HammerFuzzy extends Provenance
 }
 
 final case class HistoryPoint(observation: PriceObservation, provenance: Provenance = Provenance.FirstParty)
@@ -79,7 +79,7 @@ object RollingStats {
   def rollingStats(key: ProductKey, points: List[HistoryPoint], window: Duration, now: Instant): PriceStats = {
     val cutoff   = now.minus(window)
     val inWindow = points.filter(p => !p.observation.observedAt.isBefore(cutoff))
-    val priced = inWindow.flatMap(p => p.observation.effectivePrice.map(m => (m.cents, weightOf(p)))).filter(_._2 > 0)
+    val priced   = inWindow.flatMap(p => p.observation.effectivePrice.map(m => (m.cents, weightOf(p)))).filter(_._2 > 0)
 
     PriceStats(
       key = key,
@@ -105,14 +105,14 @@ object RollingStats {
   def weightedMedian(valuesWithWeights: List[(Long, Double)]): Option[Long] =
     if (valuesWithWeights.isEmpty) None
     else {
-      val sorted = valuesWithWeights.sortBy(_._1)
-      val total  = sorted.map(_._2).sum
-      val half   = total / 2.0
+      val sorted  = valuesWithWeights.sortBy(_._1)
+      val total   = sorted.map(_._2).sum
+      val half    = total / 2.0
       val epsilon = 1e-9
 
-      var cumulative = 0.0
+      var cumulative           = 0.0
       var result: Option[Long] = None
-      var i = 0
+      var i                    = 0
       while (i < sorted.length && result.isEmpty) {
         val (value, weight) = sorted(i)
         cumulative += weight

@@ -50,7 +50,11 @@ object DegradationPolicy {
 
   /** Which failures should page the operator (00.5 + 08.2). */
   def needsOperatorAlert(error: DealWatchError, essential: Boolean): Boolean =
-    error.operatorAttention || (essential && !error.retriable) || decide(error, fallbackAvailable = false, essential) == Degradation.FailRun
+    error.operatorAttention || (essential && !error.retriable) || decide(
+      error,
+      fallbackAvailable = false,
+      essential,
+    ) == Degradation.FailRun
 
   def degradedEntry(source: SourceName, error: DealWatchError): DegradedSource = DegradedSource(source, error)
 }

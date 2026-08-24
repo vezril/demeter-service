@@ -107,15 +107,12 @@ final case class Config(
 sealed abstract class ConfigError(val message: String) extends Product with Serializable
 
 object ConfigError {
-  final case class BadPostalCode(input: String, why: String)
-      extends ConfigError(s"invalid postal code '$input': $why")
+  final case class BadPostalCode(input: String, why: String) extends ConfigError(s"invalid postal code '$input': $why")
   final case class MissingKey(source: String, key: String)
       extends ConfigError(s"$source is enabled but $key is not set")
-  case object EmptySinkChain
-      extends ConfigError("the alert sink chain is empty — alerts would have nowhere to go")
-  final case class BadValue(field: String, why: String) extends ConfigError(s"invalid $field: $why")
-  final case class BadSchedule(cron: String, why: String)
-      extends ConfigError(s"invalid schedule.cron '$cron': $why")
+  case object EmptySinkChain extends ConfigError("the alert sink chain is empty — alerts would have nowhere to go")
+  final case class BadValue(field: String, why: String)   extends ConfigError(s"invalid $field: $why")
+  final case class BadSchedule(cron: String, why: String) extends ConfigError(s"invalid schedule.cron '$cron': $why")
 }
 
 object Config {
@@ -165,7 +162,10 @@ object Config {
     // must stop startup rather than surface after the service has sat idle
     // looking healthy for a day (08.4).
     val scheduleErrors =
-      DailySchedule.parse(config.schedule.cron, config.schedule.zone).left.toSeq
+      DailySchedule
+        .parse(config.schedule.cron, config.schedule.zone)
+        .left
+        .toSeq
         .map(why => ConfigError.BadSchedule(config.schedule.cron, why))
         .toList
 

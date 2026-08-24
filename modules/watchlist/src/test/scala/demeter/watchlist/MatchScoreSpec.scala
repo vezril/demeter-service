@@ -42,9 +42,9 @@ final class MatchScoreSpec extends AnyFunSuite with ScalaCheckPropertyChecks {
 
   test("within a group the cheapest priced match ranks first, unknown price last") {
     val ranks = MatchScore.rankByPrice(List(Some(Money.cents(250)), Some(Money.cents(299)), None))
-    assert(ranks.head == 1.0)              // 2.50 cheapest
-    assert(ranks(1) < ranks.head)          // 2.99 below it...
-    assert(ranks(1) > ranks(2))            // ...but a known price still beats no price
+    assert(ranks.head == 1.0)     // 2.50 cheapest
+    assert(ranks(1) < ranks.head) // 2.99 below it...
+    assert(ranks(1) > ranks(2))   // ...but a known price still beats no price
     assert(ranks(2) == MatchScore.UnknownPriceRank)
   }
 

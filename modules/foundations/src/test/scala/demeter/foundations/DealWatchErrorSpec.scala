@@ -10,18 +10,18 @@ final class DealWatchErrorSpec extends AnyFunSuite {
 
   test("each error declares the correct retriability") {
     val cases: Seq[(DealWatchError, Boolean)] = Seq(
-      HttpStatus(500, url)              -> true,
-      HttpStatus(503, url)              -> true,
-      HttpStatus(404, url)              -> false,
-      HttpStatus(429, url)              -> true,
-      Timeout(url)                      -> true,
-      Transport(url, "connection reset") -> true,
-      BotWall(url, "cf-chl-bypass")     -> false,
+      HttpStatus(500, url)                                     -> true,
+      HttpStatus(503, url)                                     -> true,
+      HttpStatus(404, url)                                     -> false,
+      HttpStatus(429, url)                                     -> true,
+      Timeout(url)                                             -> true,
+      Transport(url, "connection reset")                       -> true,
+      BotWall(url, "cf-chl-bypass")                            -> false,
       Decode("flipp", "items[3].current_price", "not numeric") -> false,
-      InvalidDomain("Flyer(1)", "bad window") -> false,
-      StoreConflict("price_observation", "k") -> false,
-      StoreUnavailable("connection refused")  -> true,
-      Unsupported("apify", "items")           -> false, // a capability gap never becomes supported by retrying
+      InvalidDomain("Flyer(1)", "bad window")                  -> false,
+      StoreConflict("price_observation", "k")                  -> false,
+      StoreUnavailable("connection refused")                   -> true,
+      Unsupported("apify", "items") -> false, // a capability gap never becomes supported by retrying
     )
     for ((err, expected) <- cases)
       assert(err.retriable == expected, s"error: $err")
@@ -39,16 +39,16 @@ final class DealWatchErrorSpec extends AnyFunSuite {
     // reconstruct the failure without re-hitting the network, so the key names
     // and their values are contract, not decoration.
     val cases: Seq[(DealWatchError, Map[String, String])] = Seq(
-      HttpStatus(503, url)                                     -> Map("code" -> "503", "url" -> url),
-      Timeout(url)                                             -> Map("url" -> url),
-      Transport(url, "connection reset")                       -> Map("url" -> url, "cause" -> "connection reset"),
-      BotWall(url, "cf-chl-bypass")                            -> Map("url" -> url, "signal" -> "cf-chl-bypass"),
-      Unsupported("apify", "items")                            -> Map("source" -> "apify", "capability" -> "items"),
+      HttpStatus(503, url)               -> Map("code" -> "503", "url" -> url),
+      Timeout(url)                       -> Map("url" -> url),
+      Transport(url, "connection reset") -> Map("url" -> url, "cause" -> "connection reset"),
+      BotWall(url, "cf-chl-bypass")      -> Map("url" -> url, "signal" -> "cf-chl-bypass"),
+      Unsupported("apify", "items")      -> Map("source" -> "apify", "capability" -> "items"),
       Decode("flipp", "items[3].current_price", "not numeric") ->
         Map("source" -> "flipp", "pointer" -> "items[3].current_price", "reason" -> "not numeric"),
-      InvalidDomain("Flyer(1)", "bad window")                  -> Map("what" -> "Flyer(1)", "reason" -> "bad window"),
-      StoreConflict("price_observation", "k")                  -> Map("entity" -> "price_observation", "key" -> "k"),
-      StoreUnavailable("connection refused")                   -> Map("cause" -> "connection refused"),
+      InvalidDomain("Flyer(1)", "bad window") -> Map("what" -> "Flyer(1)", "reason" -> "bad window"),
+      StoreConflict("price_observation", "k") -> Map("entity" -> "price_observation", "key" -> "k"),
+      StoreUnavailable("connection refused")  -> Map("cause" -> "connection refused"),
     )
     for ((err, expected) <- cases) assert(err.context == expected, s"error: $err")
   }

@@ -29,8 +29,8 @@ final case class Alert(
 
   def renderPlain(locale: Locale, zone: ZoneId = Alert.MontrealZone): String = {
     val head = price match {
-      case Some(p)   => s"${Alert.formatMoney(p, locale)} ${itemName}"
-      case None      => saleText.map(t => s"$t — $itemName").getOrElse(itemName)
+      case Some(p) => s"${Alert.formatMoney(p, locale)} ${itemName}"
+      case None    => saleText.map(t => s"$t — $itemName").getOrElse(itemName)
     }
     val ends = locale match {
       case Locale.FrCa => s"jusqu'au ${Alert.formatDate(validTo, locale, zone)}"

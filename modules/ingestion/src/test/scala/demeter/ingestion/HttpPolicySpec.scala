@@ -38,11 +38,11 @@ final class HttpPolicySpec extends AnyFunSuite with ScalaCheckPropertyChecks {
   test("a retriable error is retried up to the attempt cap then surfaced") {
     val err = DealWatchError.HttpStatus(503, "u")
     val (attempts, result) = (for {
-      p        <- policy()
-      ca       <- counted[Unit](List(Left(err), Left(err), Left(err)))
-      (c, a)    = ca
-      res      <- p.run("u")(a)
-      n        <- c.get
+      p  <- policy()
+      ca <- counted[Unit](List(Left(err), Left(err), Left(err)))
+      (c, a) = ca
+      res <- p.run("u")(a)
+      n   <- c.get
     } yield (n, res)).unsafeRunSync()
     assert(attempts == 3)
     assert(result == Left(err))
@@ -51,11 +51,11 @@ final class HttpPolicySpec extends AnyFunSuite with ScalaCheckPropertyChecks {
   test("a non-retriable error is not retried") {
     val err = DealWatchError.HttpStatus(404, "u")
     val (attempts, result) = (for {
-      p     <- policy()
-      ca    <- counted[Unit](List(Left(err)))
+      p  <- policy()
+      ca <- counted[Unit](List(Left(err)))
       (c, a) = ca
-      res   <- p.run("u")(a)
-      n     <- c.get
+      res <- p.run("u")(a)
+      n   <- c.get
     } yield (n, res)).unsafeRunSync()
     assert(attempts == 1)
     assert(result == Left(err))
@@ -63,11 +63,11 @@ final class HttpPolicySpec extends AnyFunSuite with ScalaCheckPropertyChecks {
 
   test("a success on the second attempt returns without further tries") {
     val (attempts, result) = (for {
-      p     <- policy()
-      ca    <- counted[String](List(Left(DealWatchError.Timeout("u")), Right("ok"), Right("never")))
+      p  <- policy()
+      ca <- counted[String](List(Left(DealWatchError.Timeout("u")), Right("ok"), Right("never")))
       (c, a) = ca
-      res   <- p.run("u")(a)
-      n     <- c.get
+      res <- p.run("u")(a)
+      n   <- c.get
     } yield (n, res)).unsafeRunSync()
     assert(attempts == 2)
     assert(result == Right("ok"))
@@ -76,11 +76,11 @@ final class HttpPolicySpec extends AnyFunSuite with ScalaCheckPropertyChecks {
   test("a Cloudflare challenge short-circuits to BotWall without retry") {
     val err = DealWatchError.BotWall("u", "cf-chl-bypass")
     val (attempts, result) = (for {
-      p     <- policy()
-      ca    <- counted[Unit](List(Left(err)))
+      p  <- policy()
+      ca <- counted[Unit](List(Left(err)))
       (c, a) = ca
-      res   <- p.run("u")(a)
-      n     <- c.get
+      res <- p.run("u")(a)
+      n   <- c.get
     } yield (n, res)).unsafeRunSync()
     assert(attempts == 1)
     assert(result == Left(err))

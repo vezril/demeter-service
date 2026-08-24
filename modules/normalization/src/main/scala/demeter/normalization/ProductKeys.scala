@@ -18,8 +18,10 @@ object ProductKeys {
   def productKey(merchantId: MerchantId, name: BilingualText, size: Option[Size]): ProductKey = {
     val primaryForm = name.anyForm.getOrElse("")
     val tokens      = TextNormalizer.normalize(primaryForm).tokens
-    val sizePart    = size.map(s => s"${s.quantity.bigDecimal.stripTrailingZeros.toPlainString}:${s.unit}:${s.packCount}").getOrElse("nosize")
-    val payload     = s"${merchantId.value}|${tokens.mkString(" ")}|$sizePart"
+    val sizePart = size
+      .map(s => s"${s.quantity.bigDecimal.stripTrailingZeros.toPlainString}:${s.unit}:${s.packCount}")
+      .getOrElse("nosize")
+    val payload = s"${merchantId.value}|${tokens.mkString(" ")}|$sizePart"
     ProductKey(s"$Version:${sha256Hex(payload).take(32)}")
   }
 

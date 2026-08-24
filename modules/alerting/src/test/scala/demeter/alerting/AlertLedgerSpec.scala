@@ -23,7 +23,9 @@ final class AlertLedgerSpec extends AnyFunSuite {
   private val url = "jdbc:postgresql://localhost:55432/demeter_test"
 
   private lazy val available: Boolean =
-    Try { Class.forName("org.postgresql.Driver"); DriverManager.getConnection(url, "demeter", "demeter").close() }.isSuccess
+    Try {
+      Class.forName("org.postgresql.Driver"); DriverManager.getConnection(url, "demeter", "demeter").close()
+    }.isSuccess
 
   private lazy val xa: Transactor[IO] =
     Transactor.fromDriverManager[IO]("org.postgresql.Driver", url, "demeter", "demeter", None)
@@ -105,7 +107,9 @@ final class AlertLedgerSpec extends AnyFunSuite {
     val rehydrated = ledger.openAt(windowFrom).unsafeRunSync()
 
     val cheaper = AlertRecord(key(), Some(Money.cents(250)), at)
-    assert(rehydrated.get(key()).exists(_.alertedPrice.exists(_.cents > cheaper.alertedPrice.get.cents)),
-           "a drop must remain detectable after a restart")
+    assert(
+      rehydrated.get(key()).exists(_.alertedPrice.exists(_.cents > cheaper.alertedPrice.get.cents)),
+      "a drop must remain detectable after a restart",
+    )
   }
 }

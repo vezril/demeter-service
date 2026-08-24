@@ -35,8 +35,8 @@ final class UnitPriceCalculatorSpec extends AnyFunSuite {
       ("Soda 2 liters", Locale.EnCa, BigDecimal(2), StdUnit.PerLitre),
       ("Lait 1 litre", Locale.FrCa, BigDecimal(1), StdUnit.PerLitre),
       ("Sugar 1 gram", Locale.EnCa, BigDecimal(0.001), StdUnit.PerKg),
-      ("Soda 1 liter", Locale.EnCa, BigDecimal(1), StdUnit.PerLitre),      // singular
-      ("Beurre 1 gramme", Locale.FrCa, BigDecimal(0.001), StdUnit.PerKg),  // singular
+      ("Soda 1 liter", Locale.EnCa, BigDecimal(1), StdUnit.PerLitre),    // singular
+      ("Beurre 1 gramme", Locale.FrCa, BigDecimal(0.001), StdUnit.PerKg), // singular
     )
     for ((name, locale, qty, unit) <- cases) {
       val Some(s) = size(name, locale)
@@ -65,9 +65,9 @@ final class UnitPriceCalculatorSpec extends AnyFunSuite {
 
   test("price plus size yields a per-standard-unit price") {
     val cases = Seq(
-      (499L, BigDecimal(4), StdUnit.PerLitre, 125L),  // $4.99/4L ≈ $1.25/L
+      (499L, BigDecimal(4), StdUnit.PerLitre, 125L), // $4.99/4L ≈ $1.25/L
       (299L, BigDecimal(1), StdUnit.PerLitre, 299L),
-      (500L, BigDecimal(0.5), StdUnit.PerKg, 1000L),  // $5.00/500g = $10.00/kg
+      (500L, BigDecimal(0.5), StdUnit.PerKg, 1000L), // $5.00/500g = $10.00/kg
     )
     for ((cents, qty, unit, expected) <- cases) {
       val up = UnitPriceCalculator.unitPrice(Money.cents(cents), Size(qty, unit, 1))

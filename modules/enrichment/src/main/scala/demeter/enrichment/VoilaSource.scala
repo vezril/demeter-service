@@ -80,12 +80,12 @@ object VoilaSource {
     */
   def unitBasisOf(label: String): Option[(StdUnit, BigDecimal)] =
     label.toLowerCase match {
-      case l if l.endsWith("per.100ml") => Some((StdUnit.PerLitre, BigDecimal(10)))   // per 100 mL -> per L
-      case l if l.endsWith("per.100g")  => Some((StdUnit.PerKg, BigDecimal(10)))      // per 100 g  -> per kg
-      case l if l.endsWith("per.litre") || l.endsWith("per.l")  => Some((StdUnit.PerLitre, BigDecimal(1)))
-      case l if l.endsWith("per.kg")    => Some((StdUnit.PerKg, BigDecimal(1)))
+      case l if l.endsWith("per.100ml") => Some((StdUnit.PerLitre, BigDecimal(10))) // per 100 mL -> per L
+      case l if l.endsWith("per.100g")  => Some((StdUnit.PerKg, BigDecimal(10)))    // per 100 g  -> per kg
+      case l if l.endsWith("per.litre") || l.endsWith("per.l")   => Some((StdUnit.PerLitre, BigDecimal(1)))
+      case l if l.endsWith("per.kg")                             => Some((StdUnit.PerKg, BigDecimal(1)))
       case l if l.endsWith("per.each") || l.endsWith("per.item") => Some((StdUnit.PerItem, BigDecimal(1)))
-      case _                            => None
+      case _                                                     => None
     }
 
   def decodePage(
@@ -109,7 +109,9 @@ object VoilaSource {
     */
   def decodeState(state: Json, merchant: MerchantId, source: SourceName, now: java.time.Instant): List[EnrichedPrice] =
     state.hcursor
-      .downField("data").downField("products").downField("productEntities")
+      .downField("data")
+      .downField("products")
+      .downField("productEntities")
       .focus
       .flatMap(_.asObject)
       .map(_.toList.flatMap { case (_, product) => decodeProduct(product, merchant, source, now) })

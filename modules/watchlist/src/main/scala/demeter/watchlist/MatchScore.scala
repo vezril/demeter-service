@@ -49,8 +49,8 @@ object MatchScore {
     val known = prices.flatten.map(_.cents)
     if (known.isEmpty) prices.map(_ => UnknownPriceRank)
     else {
-      val min = known.min
-      val max = known.max
+      val min  = known.min
+      val max  = known.max
       val span = 1.0 - KnownPriceFloor
       prices.map {
         case None => UnknownPriceRank

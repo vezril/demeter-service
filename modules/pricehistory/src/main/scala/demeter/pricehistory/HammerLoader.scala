@@ -38,14 +38,14 @@ object HammerLoader {
 
   /** Hammer vendors mapped to our merchant ids where they overlap. */
   val DefaultVendorMap: Map[String, MerchantId] = Map(
-    "Metro"          -> MerchantId(2269),
-    "Voila"          -> MerchantId(4592),
-    "Loblaws"        -> MerchantId(1057),
-    "NoFrills"       -> MerchantId(1052),
-    "TandT"          -> MerchantId(2298),
-    "Walmart"        -> MerchantId(234),
-    "SaveOnFoods"    -> MerchantId(1054),
-    "Galleria"       -> MerchantId(6853),
+    "Metro"       -> MerchantId(2269),
+    "Voila"       -> MerchantId(4592),
+    "Loblaws"     -> MerchantId(1057),
+    "NoFrills"    -> MerchantId(1052),
+    "TandT"       -> MerchantId(2298),
+    "Walmart"     -> MerchantId(234),
+    "SaveOnFoods" -> MerchantId(1054),
+    "Galleria"    -> MerchantId(6853),
   )
 
   /** Vendors Hammer's own docs warn are fuzzy-matched (UPC/id unreliable):
@@ -61,10 +61,10 @@ object HammerLoader {
 
   /** Minimal CSV split honouring double-quoted fields (Hammer product names contain commas). */
   def splitCsvLine(line: String): List[String] = {
-    val out   = List.newBuilder[String]
-    val field = new StringBuilder
+    val out      = List.newBuilder[String]
+    val field    = new StringBuilder
     var inQuotes = false
-    var i = 0
+    var i        = 0
     while (i < line.length) {
       val c = line.charAt(i)
       if (c == '"') {
@@ -114,10 +114,10 @@ final class CsvHammerLoader[F[_]](
       raws
         .foldLeftM((0, 0)) { case ((loaded, skipped), row) =>
           val parsed = for {
-            id                <- row.get("product_id").orElse(row.get("id"))
-            (vendor, name)    <- dimension.get(id)
-            merchant          <- HammerLoader.merchantFor(vendor, vendorMap)
-            at                <- row.get("nowtime").orElse(row.get("date")).flatMap(HammerLoader.parseDate)
+            id             <- row.get("product_id").orElse(row.get("id"))
+            (vendor, name) <- dimension.get(id)
+            merchant       <- HammerLoader.merchantFor(vendor, vendorMap)
+            at             <- row.get("nowtime").orElse(row.get("date")).flatMap(HammerLoader.parseDate)
           } yield HammerRow(
             productId = id,
             vendor = vendor,
@@ -134,7 +134,10 @@ final class CsvHammerLoader[F[_]](
           }
         }
         .map { case (loaded, skipped) =>
-          Right(LoadReport(products = dimension.size, priceRows = loaded, skipped = skipped)): Either[DealWatchError, LoadReport]
+          Right(LoadReport(products = dimension.size, priceRows = loaded, skipped = skipped)): Either[
+            DealWatchError,
+            LoadReport,
+          ]
         }
     }.handleError(e => Left(DealWatchError.InvalidDomain("hammer", e.toString)))
 

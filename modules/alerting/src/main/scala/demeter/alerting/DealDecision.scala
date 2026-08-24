@@ -14,18 +14,18 @@ import demeter.watchlist.{Match, WatchItem}
 sealed abstract class AlertDecision extends Product with Serializable
 
 object AlertDecision {
-  final case class Alert(deal: Deal) extends AlertDecision
+  final case class Alert(deal: Deal)                extends AlertDecision
   final case class Suppress(reason: SuppressReason) extends AlertDecision
 }
 
 sealed abstract class SuppressReason(val message: String) extends Product with Serializable
 
 object SuppressReason {
-  case object AboveMaxPrice     extends SuppressReason("above max price")
-  case object PriceUnknown      extends SuppressReason("price unknown, max price required")
-  case object NotASale          extends SuppressReason("not a sale")
+  case object AboveMaxPrice      extends SuppressReason("above max price")
+  case object PriceUnknown       extends SuppressReason("price unknown, max price required")
+  case object NotASale           extends SuppressReason("not a sale")
   case object DiscountTooShallow extends SuppressReason("discount below threshold")
-  case object WatchInactive     extends SuppressReason("watch inactive")
+  case object WatchInactive      extends SuppressReason("watch inactive")
 }
 
 /** An alertable deal: the match, why it's good, and how strongly it scored. */

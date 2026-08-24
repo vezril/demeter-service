@@ -28,7 +28,8 @@ import org.scalatest.funsuite.AnyFunSuite
 final class EnrichmentSourcesSpec extends AnyFunSuite {
 
   private val postal = PostalCode.parse("H2X1Y6").toOption.get
-  private val config = HttpPolicyConfig(backoffBase = 1.milli, backoffCap = 2.millis, rateLimit = 1000, rateWindow = 1.second)
+  private val config =
+    HttpPolicyConfig(backoffBase = 1.milli, backoffCap = 2.millis, rateLimit = 1000, rateWindow = 1.second)
 
   private def policy: HttpPolicy[IO] =
     Random.scalaUtilRandom[IO].flatMap(implicit r => HttpPolicy.create[IO](config)).unsafeRunSync()
@@ -49,7 +50,8 @@ final class EnrichmentSourcesSpec extends AnyFunSuite {
       body: String,
       log: Ref[IO, List[(String, Map[String, String], String)]],
   ): PostTransport[IO] =
-    (url, headers, reqBody) => log.update(_ :+ ((url, headers, reqBody))).as(Right(HttpResponse(status, bytes(body), "application/json")))
+    (url, headers, reqBody) =>
+      log.update(_ :+ ((url, headers, reqBody))).as(Right(HttpResponse(status, bytes(body), "application/json")))
 
   // --- 06.2 PC Express ---
 
@@ -58,7 +60,11 @@ final class EnrichmentSourcesSpec extends AnyFunSuite {
   test("a product search response maps to enriched prices") {
     val body = """{"results":[{"name":"Lait Natrel 4 L","prices":{"price":{"value":4.99}}}]}"""
     val log  = Ref.of[IO, List[(String, Map[String, String], String)]](Nil).unsafeRunSync()
-    val src  = new PcExpressSource[IO](PcExpressConfig("KEY", banners = Map(MerchantId(1) -> "maxi")), postStub(200, body, log), policy)
+    val src = new PcExpressSource[IO](
+      PcExpressConfig("KEY", banners = Map(MerchantId(1) -> "maxi")),
+      postStub(200, body, log),
+      policy,
+    )
 
     val Right(prices) = src.lookup("lait", postal, Locale.FrCa).unsafeRunSync()
     assert(prices.size == 1)
@@ -69,7 +75,11 @@ final class EnrichmentSourcesSpec extends AnyFunSuite {
 
   test("the banner header is set from the target merchant and the key comes from config") {
     val log = Ref.of[IO, List[(String, Map[String, String], String)]](Nil).unsafeRunSync()
-    val src = new PcExpressSource[IO](PcExpressConfig("SECRET-KEY", banners = pcBanners), postStub(200, """{"results":[]}""", log), policy)
+    val src = new PcExpressSource[IO](
+      PcExpressConfig("SECRET-KEY", banners = pcBanners),
+      postStub(200, """{"results":[]}""", log),
+      policy,
+    )
 
     src.lookupBanner("lait", postal, Locale.FrCa, MerchantId(1)).unsafeRunSync()
     src.lookupBanner("lait", postal, Locale.FrCa, MerchantId(2)).unsafeRunSync()
@@ -81,7 +91,11 @@ final class EnrichmentSourcesSpec extends AnyFunSuite {
 
   test("the request body carries the term, banner, and language") {
     val log = Ref.of[IO, List[(String, Map[String, String], String)]](Nil).unsafeRunSync()
-    val src = new PcExpressSource[IO](PcExpressConfig("K", banners = Map(MerchantId(1) -> "maxi")), postStub(200, """{"results":[]}""", log), policy)
+    val src = new PcExpressSource[IO](
+      PcExpressConfig("K", banners = Map(MerchantId(1) -> "maxi")),
+      postStub(200, """{"results":[]}""", log),
+      policy,
+    )
     src.lookup("lait", postal, Locale.FrCa).unsafeRunSync()
     val body = log.get.unsafeRunSync().head._3
     assert(body.contains("\"term\":\"lait\""))
@@ -91,21 +105,29 @@ final class EnrichmentSourcesSpec extends AnyFunSuite {
 
   test("a rejected API key degrades this source with a typed error") {
     val log = Ref.of[IO, List[(String, Map[String, String], String)]](Nil).unsafeRunSync()
-    val src = new PcExpressSource[IO](PcExpressConfig("BAD", banners = Map(MerchantId(1) -> "maxi")), postStub(401, "unauthorized", log), policy)
+    val src = new PcExpressSource[IO](
+      PcExpressConfig("BAD", banners = Map(MerchantId(1) -> "maxi")),
+      postStub(401, "unauthorized", log),
+      policy,
+    )
     val result = src.lookup("lait", postal, Locale.EnCa).unsafeRunSync()
     assert(result == Left(DealWatchError.HttpStatus(401, PcExpressConfig("BAD").baseUrl)))
     assert(!result.swap.toOption.get.retriable) // a bad key is not worth retrying
   }
 
   test("the API key is never a source literal") {
-    val src = new PcExpressSource[IO](PcExpressConfig("FROM-CONFIG", banners = pcBanners), postStub(200, "{}", Ref.of[IO, List[(String, Map[String, String], String)]](Nil).unsafeRunSync()), policy)
+    val src = new PcExpressSource[IO](
+      PcExpressConfig("FROM-CONFIG", banners = pcBanners),
+      postStub(200, "{}", Ref.of[IO, List[(String, Map[String, String], String)]](Nil).unsafeRunSync()),
+      policy,
+    )
     assert(src.headers("maxi", Locale.EnCa)("X-Apikey") == "FROM-CONFIG")
   }
 
   // --- 06.3 Voilà (rebuilt 2026-08-20 against the verified shape) ---
 
   test("a captured search page decodes to enriched prices (@contract)") {
-    val html   = new String(java.nio.file.Files.readAllBytes(fixture("voila_search.sample.html")), StandardCharsets.UTF_8)
+    val html = new String(java.nio.file.Files.readAllBytes(fixture("voila_search.sample.html")), StandardCharsets.UTF_8)
     val Right(prices) = VoilaSource.decodePage(html, MerchantId(4592), SourceName("voila"), Instant.EPOCH)
 
     assert(prices.size == 4)
@@ -120,7 +142,7 @@ final class EnrichmentSourcesSpec extends AnyFunSuite {
   }
 
   test("a product on sale reports the regular price as the baseline, not the sale price") {
-    val html   = new String(java.nio.file.Files.readAllBytes(fixture("voila_search.sample.html")), StandardCharsets.UTF_8)
+    val html = new String(java.nio.file.Files.readAllBytes(fixture("voila_search.sample.html")), StandardCharsets.UTF_8)
     val Right(prices) = VoilaSource.decodePage(html, MerchantId(4592), SourceName("voila"), Instant.EPOCH)
 
     // this is the entire point of enrichment: 07.3 needs the REGULAR price to
@@ -148,13 +170,18 @@ final class EnrichmentSourcesSpec extends AnyFunSuite {
   }
 
   test("a page without the embedded state is a decode error naming what was missing") {
-    val result = VoilaSource.decodePage("<html><body>nothing here</body></html>", MerchantId(4592), SourceName("voila"), Instant.EPOCH)
+    val result = VoilaSource.decodePage(
+      "<html><body>nothing here</body></html>",
+      MerchantId(4592),
+      SourceName("voila"),
+      Instant.EPOCH,
+    )
     assert(result.swap.exists(_.isInstanceOf[DealWatchError.Decode]))
     assert(result.swap.exists(_.context("pointer") == "window.__INITIAL_STATE__"))
   }
 
   test("an individual unparseable product is dropped, not fatal to the lookup") {
-    val html = """<script>window.__INITIAL_STATE__ = {"data":{"products":{"productEntities":{
+    val html          = """<script>window.__INITIAL_STATE__ = {"data":{"products":{"productEntities":{
       "a":{"name":"Good Milk 2 L","price":{"current":{"amount":"4.99","currency":"CAD"}}},
       "b":{"price":{"current":{"amount":"1.99","currency":"CAD"}}}
     }}}};</script>"""
@@ -164,7 +191,7 @@ final class EnrichmentSourcesSpec extends AnyFunSuite {
   }
 
   test("a non-CAD amount is refused rather than silently mixed") {
-    val html = """<script>window.__INITIAL_STATE__ = {"data":{"products":{"productEntities":{
+    val html          = """<script>window.__INITIAL_STATE__ = {"data":{"products":{"productEntities":{
       "a":{"name":"Imported Thing","price":{"current":{"amount":"4.99","currency":"USD"}}}
     }}}};</script>"""
     val Right(prices) = VoilaSource.decodePage(html, MerchantId(4592), SourceName("voila"), Instant.EPOCH)
@@ -190,7 +217,8 @@ final class EnrichmentSourcesSpec extends AnyFunSuite {
   test("CT enrichment is cached for the flyer validity window") {
     val calls = Ref.of[IO, List[String]](Nil).unsafeRunSync()
     val body  = """{"skus":[{"title":"MASTERCRAFT Socket Set","currentPrice":{"value":29.99}}]}"""
-    val src   = CanadianTireSource.create[IO](CanadianTireConfig(), getStub(200, body, Some(calls)), policy).unsafeRunSync()
+    val src =
+      CanadianTireSource.create[IO](CanadianTireConfig(), getStub(200, body, Some(calls)), policy).unsafeRunSync()
 
     val until = Instant.now().plusSeconds(86400)
     val first = src.lookupCachedUntil("socket set", postal, Locale.EnCa, Some(until)).unsafeRunSync()
@@ -203,8 +231,10 @@ final class EnrichmentSourcesSpec extends AnyFunSuite {
 
   test("an expired cache entry re-fetches") {
     val calls = Ref.of[IO, List[String]](Nil).unsafeRunSync()
-    val src   = CanadianTireSource.create[IO](CanadianTireConfig(), getStub(200, """{"skus":[]}""", Some(calls)), policy).unsafeRunSync()
-    val past  = Instant.now().minusSeconds(60)
+    val src = CanadianTireSource
+      .create[IO](CanadianTireConfig(), getStub(200, """{"skus":[]}""", Some(calls)), policy)
+      .unsafeRunSync()
+    val past = Instant.now().minusSeconds(60)
     src.lookupCachedUntil("x", postal, Locale.EnCa, Some(past)).unsafeRunSync()
     src.lookupCachedUntil("x", postal, Locale.EnCa, Some(past)).unsafeRunSync()
     assert(calls.get.unsafeRunSync().size == 2)
@@ -226,14 +256,19 @@ final class EnrichmentSourcesSpec extends AnyFunSuite {
 
   test("CT's rate limit is stricter than the grocery sources'") {
     val groceryPerMinute = HttpPolicyConfig().rateLimit.toDouble / HttpPolicyConfig().rateWindow.toMinutes.max(1)
-    val ctPerMinute      = CanadianTireSource.StricterRateLimit.toDouble / CanadianTireSource.StricterRateWindow.toMinutes.max(1)
+    val ctPerMinute =
+      CanadianTireSource.StricterRateLimit.toDouble / CanadianTireSource.StricterRateWindow.toMinutes.max(1)
     assert(ctPerMinute < groceryPerMinute)
   }
 
   // --- 06.1 interface semantics ---
 
   test("a source declares which merchants it can enrich") {
-    val src = new PcExpressSource[IO](PcExpressConfig("K", banners = pcBanners), postStub(200, "{}", Ref.of[IO, List[(String, Map[String, String], String)]](Nil).unsafeRunSync()), policy)
+    val src = new PcExpressSource[IO](
+      PcExpressConfig("K", banners = pcBanners),
+      postStub(200, "{}", Ref.of[IO, List[(String, Map[String, String], String)]](Nil).unsafeRunSync()),
+      policy,
+    )
     assert(src.merchantsCovered == Set(MerchantId(1), MerchantId(2)))
   }
 
