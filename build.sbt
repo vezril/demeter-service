@@ -1,6 +1,6 @@
 import Dependencies._
 
-ThisBuild / scalaVersion := "2.13.14"
+ThisBuild / scalaVersion := "2.13.18"
 ThisBuild / organization := "ca.demeter"
 ThisBuild / scalacOptions ++= Seq(
   "-deprecation",
