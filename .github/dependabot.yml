@@ -19,6 +19,25 @@ updates:
       scala-minor-patch:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    ignore:
+      # The first run opened all three of these. They are migrations wearing a
+      # version bump's clothing, and no amount of green CI makes them routine:
+      #   scala-library 2.13 -> 3    a language migration; the build carries
+      #                              -Xsource:3 precisely because it has not
+      #                              happened yet
+      #   sbt 1 -> 2                 a build-tool migration
+      #   stryker4s 0 -> 1           the mutation gate's own tooling, which
+      #                              gates merges; it moves deliberately
+      - dependency-name: "org.scala-lang:scala-library"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "org.scala-sbt:sbt"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "io.stryker-mutator:sbt-stryker4s"
+        update-types: ["version-update:semver-major"]
+      # Typelevel publish hash-suffixed builds (3.7-4972921) that sort above the
+      # stable line. Those are not releases and must not arrive by robot.
+      - dependency-name: "org.typelevel:cats-effect*"
+        versions: ["3.7-*"]
 
   # The CI's own supply chain. The actions are SHA-pinned, and resolving those
   # SHAs by hand is exactly the chore that let three of them sit on a deprecated
