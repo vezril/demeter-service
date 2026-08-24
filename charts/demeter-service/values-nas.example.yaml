@@ -1,0 +1,46 @@
+# Worked example for a NAS running k3s. Copy, edit, and pass with -f.
+#
+#   helm upgrade --install demeter charts/demeter-service \
+#     -n demeter --create-namespace -f my-values.yaml
+
+image:
+  # Published by .github/workflows/release.yml when you push a vX.Y.Z tag.
+  # Multi-arch, so this is the same line on an amd64 or an arm NAS.
+  repository: ghcr.io/vezril/demeter-service
+  tag: "0.1.0"
+
+config:
+  # Required. Decides which flyers are fetched; there is no useful default.
+  postalCode: "H2X1Y6"
+  locale: en-ca
+
+  schedule:
+    cron: "0 6 * * *"
+    zone: America/Montreal
+    # Turn on for the very first deploy to prove the pipeline end to end, then
+    # turn it back off -- otherwise every pod restart triggers a full fetch.
+    runOnStart: false
+
+  sinks:
+    # At least one is required or the service refuses to start.
+    homeAssistantWebhook: "http://homeassistant.local:8123/api/webhook/demeter-deals"
+    # ntfyUrl: "https://ntfy.sh/your-private-topic"
+    # mqtt:
+    #   broker: "tcp://homeassistant.local:1883"
+    #   username: "demeter"
+    #   password: "put-this-in-a-real-secret-manager"
+
+postgresql:
+  enabled: true
+  password: "change-me"
+  storage:
+    size: 8Gi
+    # k3s ships local-path as the default, so leaving this empty is usually
+    # right. Set it if your NAS presents storage under another name.
+    className: ""
+
+# A NAS is not a datacentre. This is one small batch job a day: it wakes, fetches
+# a few hundred flyers, writes rows, and goes back to sleep.
+resources:
+  requests: {cpu: 100m, memory: 384Mi}
+  limits: {memory: 1Gi}

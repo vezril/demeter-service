@@ -1,0 +1,31 @@
+demeter-service {{ .Chart.AppVersion }} is deployed as {{ include "demeter.fullname" . }}.
+
+Nothing listens on a port -- there is no URL to visit. The service wakes on its
+own schedule ({{ .Values.config.schedule.cron }}, {{ .Values.config.schedule.zone }}),
+writes a run report to the log, and pushes alerts outward.
+
+Watch it:
+
+  kubectl -n {{ .Release.Namespace }} logs -f deploy/{{ include "demeter.fullname" . }}
+
+{{ if not .Values.config.schedule.runOnStart }}
+It will NOT fetch anything until the next scheduled window. To prove the whole
+pipeline works now, redeploy once with:
+
+  --set config.schedule.runOnStart=true
+
+then set it back, or every pod restart triggers a full fetch.
+{{- end }}
+
+{{ if .Values.postgresql.enabled }}
+The bundled Postgres holds every observation. It is a single replica on one PVC
+({{ .Values.postgresql.storage.size }}) with no backup of its own -- the price
+history is the part of this system that cannot be re-fetched, since flyers
+expire. Snapshot the volume, or:
+
+  kubectl -n {{ .Release.Namespace }} exec sts/{{ include "demeter.postgresFullname" . }} -- \
+    pg_dump -U {{ .Values.postgresql.username }} {{ .Values.postgresql.database }} | gzip > demeter.sql.gz
+{{- end }}
+
+The watchlist lives in the database, not in these values -- an empty one matches
+nothing, so add entries to the watch_item table before expecting alerts.

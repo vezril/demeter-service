@@ -1,0 +1,138 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "demeter.fullname" . }}
+  labels: {{- include "demeter.labels" . | nindent 4 }}
+spec:
+  # Deliberately 1, and deliberately not a CronJob.
+  #
+  # The service runs its own scheduler in-process (config.schedule.cron) and
+  # holds a fetch ledger in Postgres. A second replica would wake on the same
+  # cron and race the first through the same flyers; the ledger would keep the
+  # data honest but the run would be wasted work against an undocumented
+  # upstream that is rate-limited and bot-walled. Recreate rather than
+  # RollingUpdate for the same reason: never two of these at once.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    # The component label is load-bearing, not decoration. Without it this
+    # selector also matches the bundled Postgres pod -- which carries the same
+    # name/instance labels -- and the ReplicaSet would consider it a surplus
+    # replica of itself and delete the database.
+    matchLabels:
+      {{- include "demeter.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: service
+  template:
+    metadata:
+      annotations:
+        # Roll the pod when the credentials change; without this a secret edit
+        # is silently ignored until something else restarts it.
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}{{- toYaml . | nindent 8 }}{{- end }}
+      labels:
+        {{- include "demeter.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: service
+        {{- with .Values.podLabels }}{{- toYaml . | nindent 8 }}{{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- if .Values.postgresql.enabled }}
+      # The service opens its connection pool immediately and exits if the
+      # database will not answer. Started alongside its own Postgres it loses
+      # that race, and while the restart does recover, the first thing anyone
+      # sees is a crash loop and a page of Hikari stack traces. Wait instead.
+      initContainers:
+        - name: wait-for-postgres
+          image: {{ .Values.postgresql.image | quote }}
+          command:
+            - sh
+            - -c
+            - |
+              until pg_isready -h {{ include "demeter.postgresFullname" . }} -p 5432 -U {{ .Values.postgresql.username }} -d {{ .Values.postgresql.database }}; do
+                echo "waiting for postgres"
+                sleep 2
+              done
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {memory: 64Mi}
+      {{- end }}
+      containers:
+        - name: demeter
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            - name: DEMETER_POSTAL_CODE
+              value: {{ required "config.postalCode is required -- it decides which flyers are fetched" .Values.config.postalCode | quote }}
+            - name: DEMETER_LOCALE
+              value: {{ .Values.config.locale | quote }}
+            - name: DEMETER_SCHEDULE_CRON
+              value: {{ .Values.config.schedule.cron | quote }}
+            - name: DEMETER_SCHEDULE_ZONE
+              value: {{ .Values.config.schedule.zone | quote }}
+            - name: DEMETER_SCHEDULE_RUN_ON_START
+              value: {{ .Values.config.schedule.runOnStart | quote }}
+            - name: DEMETER_JDBC_URL
+              value: {{ include "demeter.jdbcUrl" . | quote }}
+            - name: DEMETER_DB_USER
+              value: {{ include "demeter.dbUser" . | quote }}
+            {{- with .Values.config.sinks.homeAssistantWebhook }}
+            - name: DEMETER_HA_WEBHOOK
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.config.sinks.homeAssistantMqttTopic }}
+            - name: DEMETER_HA_MQTT_TOPIC
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.config.sinks.ntfyUrl }}
+            - name: DEMETER_NTFY_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.config.sinks.mqtt.broker }}
+            - name: DEMETER_MQTT_BROKER
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.config.sinks.mqtt.username }}
+            - name: DEMETER_MQTT_USER
+              value: {{ . | quote }}
+            {{- end }}
+            - name: DEMETER_PCEXPRESS_ENABLED
+              value: {{ .Values.config.enrichment.pcExpressEnabled | quote }}
+            - name: DEMETER_LOG_LEVEL
+              value: {{ .Values.config.logLevel | quote }}
+            - name: JAVA_OPTS
+              value: {{ .Values.javaOpts | quote }}
+            {{- with .Values.extraEnv }}{{- toYaml . | nindent 12 }}{{- end }}
+          envFrom:
+            - secretRef:
+                name: {{ include "demeter.fullname" . }}
+          # No liveness or readiness probe, on purpose. Nothing binds a port, so
+          # an HTTP probe would need an endpoint invented for the probe's sake --
+          # a check that proves the JVM answers HTTP, not that the daily run
+          # works. The container exits non-zero on unrecoverable config or store
+          # failure, and restartPolicy handles that honestly.
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            # readOnlyRootFilesystem is on, and the JVM still wants somewhere to
+            # write (temp files, hsperfdata).
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}

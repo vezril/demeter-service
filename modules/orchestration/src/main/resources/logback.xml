@@ -1,0 +1,24 @@
+<!--
+  Without a config on the classpath logback falls back to DEBUG on the root
+  logger, which buries the one thing worth reading (the run report from 08.3)
+  under several hundred lines of Hikari pool chatter per startup. That is
+  survivable when you are watching a terminal and useless when the service is
+  a pod on a NAS.
+-->
+<configuration>
+  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} -- %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <!-- Overridable per deploy without a rebuild; the chart exposes it. -->
+  <root level="${DEMETER_LOG_LEVEL:-INFO}">
+    <appender-ref ref="STDOUT" />
+  </root>
+
+  <!-- Chatty even at INFO, and neither says anything about whether the run
+       worked. Raise them deliberately when debugging connections. -->
+  <logger name="com.zaxxer.hikari" level="WARN" />
+  <logger name="org.postgresql" level="WARN" />
+</configuration>

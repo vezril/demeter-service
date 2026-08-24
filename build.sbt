@@ -91,6 +91,8 @@ lazy val orchestration = (project in file("modules/orchestration"))
   // service explicitly so `run` and any packaging both mean the daily job.
   // Replay stays reachable via runMain.
   .settings(Compile / mainClass := Some("demeter.orchestration.Main"))
+  // `sbt orchestration/stage` lays out bin/ + lib/ for the container image.
+  .enablePlugins(JavaAppPackaging)
   .settings(libraryDependencies ++= Seq(cats, catsEffect, pureconfig, log4cats, logback))
   .dependsOn(
     foundations,
