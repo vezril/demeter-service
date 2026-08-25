@@ -104,6 +104,22 @@ final class RoutesSpec extends AnyFunSuite {
     assert(response.status == Status.ServiceUnavailable)
   }
 
+  test("the root serves an index, so a bookmark does not 404") {
+    // Deliberately not a redirect to /v1/runs/latest: that legitimately answers
+    // 404 until the first daily run, so a new deployment's very first visitor
+    // would land on an error.
+    val response = get(stub(IO.pure(None)), "/")
+    assert(response.status == Status.Ok)
+    val c = bodyJson(response).hcursor
+    assert(c.get[String]("service").contains("demeter-insight"))
+    assert(c.downField("endpoints").keys.exists(_.exists(_.contains("/v1/runs/latest"))))
+  }
+
+  test("the index works before any run exists") {
+    // The case the peer session actually hit: routing proven, data absent.
+    assert(get(stub(IO.pure(None)), "/").status == Status.Ok)
+  }
+
   test("health is UP when the database answers, even with no runs yet") {
     // The bug this exists for: probing the data endpoint conflates "can serve"
     // with "has data". Before the first daily run that returns 404, a pod
