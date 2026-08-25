@@ -2,6 +2,7 @@ package demeter.insight
 
 import cats.effect.Concurrent
 import cats.syntax.all._
+import io.circe.Json
 import io.circe.syntax._
 import org.http4s._
 import org.http4s.circe._
@@ -17,6 +18,27 @@ import org.http4s.dsl.Http4sDsl
 final class Routes[F[_]: Concurrent](runs: RunQueries[F]) extends Http4sDsl[F] {
 
   val routes: HttpRoutes[F] = HttpRoutes.of[F] {
+
+    // An index at the root, because a bookmark should not 404.
+    //
+    // Not a redirect: /v1/runs/latest legitimately answers 404 until the first
+    // daily run has been recorded, so redirecting there would send a new
+    // deployment's very first visitor to an error. /health would work but reads
+    // as a landing page for nobody. This says what the service is and what it
+    // serves, which is the honest answer for an API with no UI yet.
+    case GET -> Root =>
+      Ok(
+        Json.obj(
+          "service"     -> "demeter-insight".asJson,
+          "description" -> "read-only view of demeter's price history and run reports".asJson,
+          "endpoints" -> Json
+            .obj(
+              "GET /health"         -> "200 when the database is reachable, 503 when not".asJson,
+              "GET /v1/runs/latest" -> "the most recent daily run's report; 404 before the first run".asJson,
+            )
+            .asJson,
+        )
+      )
 
     // Readiness, and deliberately NOT /v1/runs/latest.
     //
