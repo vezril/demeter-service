@@ -7,6 +7,12 @@
 # runtime stage below is actually multi-arch.
 FROM --platform=$BUILDPLATFORM sbtscala/scala-sbt:eclipse-temurin-21.0.12_8_1.13.0_2.13.18 AS builder
 
+# Which service this image is. Two services are built from this one file so the
+# runtime notes below -- musl, the launcher's mode, bash -- are written once and
+# cannot drift between them.
+ARG MODULE=orchestration
+ARG LAUNCHER=demeter-orchestration
+
 WORKDIR /src
 
 # Dependency resolution is the slow half and changes far less often than source,
@@ -20,7 +26,7 @@ RUN --mount=type=cache,target=/root/.cache/coursier \
 COPY modules/ modules/
 RUN --mount=type=cache,target=/root/.cache/coursier \
     --mount=type=cache,target=/root/.sbt \
-    sbt -batch orchestration/stage
+    sbt -batch $MODULE/stage
 
 # ---------- runtime ----------
 # musl, not glibc, and that is the whole point.
@@ -48,24 +54,33 @@ RUN apk add --no-cache bash
 RUN addgroup -S -g 10001 demeter \
  && adduser -S -u 10001 -G demeter -h /opt/demeter -s /sbin/nologin demeter
 
-COPY --from=builder --chown=root:root /src/modules/orchestration/target/universal/stage /opt/demeter
+ARG MODULE=orchestration
+ARG LAUNCHER=demeter-orchestration
+
+COPY --from=builder --chown=root:root /src/modules/$MODULE/target/universal/stage /opt/demeter
 
 # sbt-native-packager stages the launcher 0744 -- executable by its owner only.
 # `docker run` happened not to care, but under a Kubernetes securityContext with
 # runAsUser: 10001 the container dies on "permission denied" before the JVM ever
 # starts. Make the two launchers world-executable; nothing else in here is meant
 # to be run directly.
-RUN chmod 0755 /opt/demeter/bin/demeter-orchestration /opt/demeter/bin/replay \
+RUN chmod 0755 /opt/demeter/bin/* \
  && rm -f /opt/demeter/bin/*.bat
+
+# A shim, because ENTRYPOINT's exec form cannot expand a build arg. Written
+# before USER drops privileges -- an unprivileged user cannot create it at /.
+RUN printf '#!/bin/sh\nexec /opt/demeter/bin/%s "$@"\n' "$LAUNCHER" > /entrypoint.sh \
+ && chmod 0755 /entrypoint.sh
 
 USER 10001:10001
 WORKDIR /opt/demeter
 
-# Every knob is an environment variable (see Main.scala loadConfig); the chart
-# supplies them. Defaults here stay empty so a misconfigured deploy fails fast
-# and loudly rather than silently polling the wrong postal code.
+# Every knob is an environment variable; the chart supplies them. Defaults here
+# stay empty so a misconfigured deploy fails fast and loudly rather than, say,
+# silently polling the wrong postal code.
 ENV JAVA_OPTS="-XX:MaxRAMPercentage=75 -XX:+UseSerialGC"
 
-# No port is exposed by design: nothing binds a socket. The run report is
-# written to the log, and alerts are pushed outward to Home Assistant.
-ENTRYPOINT ["/opt/demeter/bin/demeter-orchestration"]
+# No EXPOSE, deliberately, and it means different things per service: the daily
+# job binds no socket at all, while demeter-insight binds one the chart names.
+# EXPOSE is documentation either way, never enforcement.
+ENTRYPOINT ["/entrypoint.sh"]

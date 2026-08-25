@@ -39,6 +39,17 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
 
+      - name: Insight image tags
+        id: meta-insight
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository }}
+          flavor: |
+            suffix=-insight,onlatest=true
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
@@ -50,6 +61,22 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The read-only reader, from the same Dockerfile via build args so the
+      # runtime notes (musl, launcher mode, bash) cannot drift between them.
+      - name: Build and publish demeter-insight
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          build-args: |
+            MODULE=insight
+            LAUNCHER=demeter-insight
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta-insight.outputs.tags }}
+          labels: ${{ steps.meta-insight.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

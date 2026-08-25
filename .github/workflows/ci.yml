@@ -105,6 +105,26 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+      - name: Lint demeter-insight
+        run: |
+          helm lint charts/demeter-insight \
+            --set database.jdbcUrl=jdbc:postgresql://db:5432/demeter \
+            --set database.password=ci
+      - name: The insight ingress class must be omitted when empty
+        # k3s's Traefik silently ignores an Ingress naming a class it cannot
+        # resolve; a rendered-empty class 404s while the object looks healthy.
+        run: |
+          helm template ci charts/demeter-insight \
+            --set database.jdbcUrl=x --set database.password=ci \
+            --set ingress.enabled=true --set ingress.host=ci.local > /tmp/insight.yaml
+          if grep -q "ingressClassName" /tmp/insight.yaml; then
+            echo "::error::empty ingress class was rendered rather than omitted"; exit 1
+          fi
+      - name: A missing database URL must fail the render
+        run: |
+          if helm template ci charts/demeter-insight --set database.password=ci >/dev/null 2>&1; then
+            echo "::error::the chart rendered without a database URL"; exit 1
+          fi
       - name: Lint
         run: |
           helm lint charts/demeter-service \
@@ -160,6 +180,16 @@ jobs:
             *x*x*x) echo "executable by others" ;;
             *) echo "::error::launcher is $MODE -- a non-root container cannot exec it"; exit 1 ;;
           esac
+      - name: The insight image builds and starts too
+        # Both services come from one Dockerfile via --build-arg. Reaching its
+        # own config error proves the JVM booted and the right main ran.
+        run: |
+          docker build -q --build-arg MODULE=insight --build-arg LAUNCHER=demeter-insight \
+            -t demeter-ci:insight . >/dev/null
+          OUT=$(docker run --rm demeter-ci:insight 2>&1 | head -3 || true)
+          echo "$OUT"
+          echo "$OUT" | grep -q "DEMETER_JDBC_URL is not set" \
+            || { echo "::error::the insight image did not reach its own config validation"; exit 1; }
       - name: The JVM must actually start under the pod's constraints
         # Building an image proves it builds, not that it runs. A v0.1.0 image
         # built and pushed cleanly and then failed on the target cluster with

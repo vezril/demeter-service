@@ -1,0 +1,64 @@
+# demeter-insight -- values
+#
+# Unlike demeter-service this DOES bind a socket; that is the point of it. The
+# daily job keeps its own process and failure domain, so a request pattern here
+# cannot affect a fetch against a rate-limited upstream.
+
+image:
+  repository: ghcr.io/vezril/demeter-service
+  # Built from the same Dockerfile with --build-arg MODULE=insight. Empty means
+  # "use .Chart.appVersion".
+  tag: ""
+  pullPolicy: IfNotPresent
+  # The insight image is a separate tag from the daily job's, since one
+  # repository holds both.
+  variantSuffix: "-insight"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+replicaCount: 1
+port: 8080
+
+database:
+  # Required. There is deliberately no default: a reader silently pointed at the
+  # wrong database returns plausible numbers about the wrong thing, which is
+  # worse than refusing to start.
+  jdbcUrl: ""
+  # The SELECT-only role from role.sql. Using demeter's own role would work and
+  # would throw away the whole guarantee -- see NOTES.
+  user: "demeter_read"
+  password: ""
+
+ingress:
+  enabled: false
+  # DELIBERATELY EMPTY, and omitted from the manifest when empty. The target
+  # cluster registers no IngressClass, and k3s's Traefik v2.4 silently ignores an
+  # Ingress naming a class it cannot resolve -- the host 404s while the object
+  # looks healthy. Set this only on a cluster that registers one.
+  className: ""
+  host: ""            # e.g. demeter.tailscale
+
+resources:
+  requests: {cpu: 50m, memory: 256Mi}
+  limits: {memory: 512Mi}
+
+javaOpts: "-XX:MaxRAMPercentage=75 -XX:+UseSerialGC"
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+  seccompProfile: {type: RuntimeDefault}
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities: {drop: ["ALL"]}

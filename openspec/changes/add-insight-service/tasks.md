@@ -12,13 +12,13 @@ would not.
 ## 1. Phase 1 — the API alone (no frontend)
 
 - [x] 1.1 `modules/insight` skeleton: sbt module depending on `foundations`, `persistence`, `pricehistory`; http4s ember server; config from environment, validated fail-fast like `orchestration`
-- [ ] 1.2 Read-only role (NOT done: the service currently connects as `demeter`; the SELECT-only role is a deployment step, and until it exists "read-only" is enforced only by there being no write routes): `CREATE ROLE demeter_read` with `GRANT SELECT`, documented in the chart; test asserts a write is refused by the database rather than by the application
+- [x] 1.2 Read-only role: `charts/demeter-insight/role.sql` (idempotent, incl. ALTER DEFAULT PRIVILEGES so a later migration's tables stay readable); `@boundary` tests connect AS the role and assert INSERT/UPDATE/DELETE/TRUNCATE are refused by PostgreSQL. Creating it on a given database is still a deployment step — NOTES.txt says so and says how to verify it: `CREATE ROLE demeter_read` with `GRANT SELECT`, documented in the chart; test asserts a write is refused by the database rather than by the application
 - [x] 1.3 Query layer owned by this module (not importing demeter's stores wholesale), so a schema change breaks one file loudly at compile time
 - [x] 1.4 `GET /v1/runs/latest` — the first endpoint, chosen because it replaces the `kubectl logs` habit immediately
 - [ ] 1.5 `GET /v1/products/{productKey}/history` — series with per-point confidence, statistics from `PriceStats.rollingStats`, verdict from `DealVerdict`; test pins that the API's numbers equal the library's
 - [ ] 1.6 `GET /v1/watches` and `GET /v1/alerts`
 - [ ] 1.7 Health: not-ready when Postgres is unreachable; no stale cached answers
-- [ ] 1.8 Chart + tailnet ingress following the `hermes.tailscale` pattern (empty ingress class — this cluster registers no IngressClass)
+- [x] 1.8 `charts/demeter-insight`: Deployment/Service/Secret/Ingress, ingress class omitted when empty, readiness probe on a real endpoint rather than a synthetic one. Image built from the same Dockerfile via `--build-arg MODULE=insight`, published as the `-insight` tag variant; CI lints the chart and starts the image
 - [ ] 1.9 **Gate**: run against the live NAS database for at least one full daily cycle; confirm the run report matches the logged exposition exactly
 
 ## 2. Phase 2 — the UI

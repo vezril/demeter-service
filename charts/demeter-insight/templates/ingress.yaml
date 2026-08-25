@@ -1,0 +1,28 @@
+{{- if .Values.ingress.enabled -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "insight.fullname" . }}
+  labels: {{- include "insight.labels" . | nindent 4 }}
+spec:
+  {{- with .Values.ingress.className }}
+  {{- /*
+  Emitted ONLY when set. An empty value renders `ingressClassName:` with nothing
+  after it, and a null class is not the same as no class: k3s's Traefik v2.4
+  silently ignores an Ingress whose class it cannot resolve, so the host 404s
+  while the object looks entirely healthy.
+  */}}
+  ingressClassName: {{ . | quote }}
+  {{- end }}
+  rules:
+    - host: {{ required "ingress.host is required when ingress.enabled" .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "insight.fullname" . }}
+                port:
+                  number: {{ .Values.port }}
+{{- end }}
