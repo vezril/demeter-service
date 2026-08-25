@@ -160,3 +160,37 @@ jobs:
             *x*x*x) echo "executable by others" ;;
             *) echo "::error::launcher is $MODE -- a non-root container cannot exec it"; exit 1 ;;
           esac
+
+  # The mutation gate answers a question the test count cannot: do the suites
+  # actually kill a mutant, or do they merely execute the line? It went unrun
+  # across an sbt 1.10 -> 1.13 bump precisely because nothing here enforced it.
+  #
+  # A matrix rather than one job looping both modules: scripts/stryker.sh writes
+  # its report to a single target/stryker4s-report at the build root, so a loop
+  # would leave only the last module's report behind. Separate jobs also say
+  # which module regressed without reading the log.
+  mutation:
+    name: Mutation (${{ matrix.module }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The @pure modules are the only mutation targets; the boundary/IO
+        # modules are covered by @boundary tests against a real Postgres instead.
+        module: [foundations, normalization]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-scala
+      - name: Mutation gate
+        # The script scopes the mutate globs to one module and switches sbt's
+        # current project, both of which stryker4s 0.16.1 requires in a
+        # multi-module build. It fails the run below the break threshold (80).
+        run: scripts/stryker.sh ${{ matrix.module }}
+      - name: Publish the HTML report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutation-report-${{ matrix.module }}
+          path: target/stryker4s-report
+          if-no-files-found: warn
+          retention-days: 14
