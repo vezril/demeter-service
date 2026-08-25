@@ -22,7 +22,10 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 CONF=stryker4s.conf
-BACKUP="$(mktemp -t stryker4s.conf)"
+# `mktemp -t PREFIX` means "prefix" to BSD/macOS mktemp and "template" to GNU
+# coreutils, which then rejects it for having no XXXXXX. The script had only ever
+# been run on macOS, so it failed on the first Linux runner that tried it.
+BACKUP="$(mktemp "${TMPDIR:-/tmp}/stryker4s.conf.XXXXXX")"
 [[ -f "$CONF" ]] && cp "$CONF" "$BACKUP"
 
 # Always put the committed config back, however we exit.
