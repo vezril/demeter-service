@@ -38,8 +38,16 @@ final class RoutesSpec extends AnyFunSuite {
       HistoryView(key.value, window.toDays, Nil, StatsView(0, 0, None, None, None, None), None)
     )
 
-  private def app(queries: RunQueries[IO], hist: HistoryQueries[IO] = emptyHistory) =
-    new Routes[IO](queries, hist).routes.orNotFound
+  private val noWatches: WatchQueries[IO] = new WatchQueries[IO] {
+    def watches: IO[List[WatchView]]            = IO.pure(Nil)
+    def alerts(limit: Int): IO[List[AlertView]] = IO.pure(Nil)
+  }
+
+  private def app(
+      queries: RunQueries[IO],
+      hist: HistoryQueries[IO] = emptyHistory,
+      w: WatchQueries[IO] = noWatches,
+  ) = new Routes[IO](queries, hist, w).routes.orNotFound
 
   private def stub(result: IO[Option[RunView]], up: Boolean = true): RunQueries[IO] = new RunQueries[IO] {
     def latest: IO[Option[RunView]] = result
@@ -50,8 +58,9 @@ final class RoutesSpec extends AnyFunSuite {
       queries: RunQueries[IO],
       path: String = "/v1/runs/latest",
       hist: HistoryQueries[IO] = emptyHistory,
+      w: WatchQueries[IO] = noWatches,
   ): Response[IO] =
-    app(queries, hist).run(Request[IO](Method.GET, Uri.unsafeFromString(path))).unsafeRunSync()
+    app(queries, hist, w).run(Request[IO](Method.GET, Uri.unsafeFromString(path))).unsafeRunSync()
 
   private def bodyJson(r: Response[IO]): Json =
     parse(r.bodyText.compile.string.unsafeRunSync()).getOrElse(Json.Null)
@@ -177,6 +186,81 @@ final class RoutesSpec extends AnyFunSuite {
   test("a database outage on history is 503, never an empty series") {
     val failing: HistoryQueries[IO] = (_, _) => IO.raiseError(new java.sql.SQLException("refused"))
     assert(get(stub(IO.pure(None)), "/v1/products/k/history", failing).status == Status.ServiceUnavailable)
+  }
+
+  // --- watches and alerts ---
+
+  private val oneWatch: WatchQueries[IO] = new WatchQueries[IO] {
+    def watches: IO[List[WatchView]] = IO.pure(
+      List(
+        WatchView(
+          "butter",
+          "Butter",
+          List("butter", "beurre"),
+          List("peanut", "arachide"),
+          Nil,
+          Some(600L),
+          requireSale = false,
+          None,
+          active = true,
+          alertsSent = 4,
+          lastAlertedAt = Some(Instant.parse("2026-08-25T13:00:00Z")),
+        )
+      )
+    )
+    def alerts(limit: Int): IO[List[AlertView]] = IO.pure(
+      List.fill(math.min(limit, 3))(
+        AlertView(
+          "butter",
+          Some("Butter"),
+          "iga|beurre",
+          Some(4001),
+          Some("IGA"),
+          Some("Beurre Lactantia"),
+          Some(499L),
+          Instant.parse("2026-08-25T13:00:00Z"),
+          Instant.parse("2026-08-20T04:00:00Z"),
+          Instant.parse("2026-08-27T04:00:00Z"),
+        )
+      )
+    )
+  }
+
+  test("watches carry their exclusion terms, which is how a noisy one gets tamed") {
+    val json  = bodyJson(get(stub(IO.pure(None)), "/v1/watches", w = oneWatch))
+    val first = json.hcursor.downArray
+    assert(first.get[List[String]]("excludeTerms").exists(_.contains("peanut")))
+    assert(first.get[Int]("alertsSent").contains(4))
+  }
+
+  test("no watches configured is an empty list, not an error") {
+    val response = get(stub(IO.pure(None)), "/v1/watches")
+    assert(response.status == Status.Ok)
+    assert(bodyJson(response).asArray.exists(_.isEmpty))
+  }
+
+  test("alerts resolve a merchant, since ProductKey is merchant-scoped") {
+    val first = bodyJson(get(stub(IO.pure(None)), "/v1/alerts", w = oneWatch)).hcursor.downArray
+    assert(first.get[String]("merchantName").contains("IGA"))
+    assert(first.get[Long]("alertedCents").contains(499L))
+  }
+
+  test("the alert limit is clamped rather than trusted") {
+    // Same reasoning as the history window: a bad number is a typo, and an
+    // unbounded limit is a way to ask for the whole ledger by accident.
+    assert(bodyJson(get(stub(IO.pure(None)), "/v1/alerts?limit=99999", w = oneWatch)).asArray.exists(_.size == 3))
+    assert(get(stub(IO.pure(None)), "/v1/alerts?limit=0", w = oneWatch).status == Status.Ok)
+  }
+
+  test("a database outage on watches is 503, not an empty list") {
+    // An empty list would read as "you have no watches", which is a different
+    // and much more alarming statement than "I cannot reach the database".
+    val failing: WatchQueries[IO] = new WatchQueries[IO] {
+      def watches: IO[List[WatchView]]            = IO.raiseError(new java.sql.SQLException("refused"))
+      def alerts(limit: Int): IO[List[AlertView]] = IO.raiseError(new java.sql.SQLException("refused"))
+    }
+    assert(get(stub(IO.pure(None)), "/v1/watches", w = failing).status == Status.ServiceUnavailable)
+    assert(get(stub(IO.pure(None)), "/v1/alerts", w = failing).status == Status.ServiceUnavailable)
   }
 
   test("every route is a GET") {
