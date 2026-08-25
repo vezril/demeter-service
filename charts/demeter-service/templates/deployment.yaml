@@ -83,6 +83,14 @@ spec:
               value: {{ include "demeter.jdbcUrl" . | quote }}
             - name: DEMETER_DB_USER
               value: {{ include "demeter.dbUser" . | quote }}
+            {{- with .Values.config.sinks.hermesmq.baseUrl }}
+            - name: DEMETER_HERMES_URL
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.config.sinks.hermesmq.topic }}
+            - name: DEMETER_HERMES_TOPIC
+              value: {{ . | quote }}
+            {{- end }}
             {{- with .Values.config.sinks.homeAssistantWebhook }}
             - name: DEMETER_HA_WEBHOOK
               value: {{ . | quote }}

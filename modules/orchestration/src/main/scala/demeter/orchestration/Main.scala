@@ -124,6 +124,9 @@ object Main extends IOApp {
                 haWebhookUrl = env.get("DEMETER_HA_WEBHOOK"),
                 haMqttTopic = env.get("DEMETER_HA_MQTT_TOPIC"),
                 ntfyTopicUrl = env.get("DEMETER_NTFY_URL"),
+                hermesBaseUrl = env.get("DEMETER_HERMES_URL"),
+                hermesTopic = env.get("DEMETER_HERMES_TOPIC"),
+                hermesApiKey = env.get("DEMETER_HERMES_API_KEY").map(Secret.apply),
                 mqttBrokerUrl = env.get("DEMETER_MQTT_BROKER"),
                 mqttUsername = env.get("DEMETER_MQTT_USER"),
                 mqttPassword = env.get("DEMETER_MQTT_PASSWORD").map(Secret.apply),
@@ -216,12 +219,37 @@ object Main extends IOApp {
             .map(_.bimap(e => DealWatchError.Transport(url, e.toString), _ => ()))
       }
 
+    // Same transport as `post`, plus an optional bearer. Kept separate so the
+    // token is never folded into a body that gets logged.
+    val postJson: (String, String, Option[String]) => IO[Either[DealWatchError, Unit]] = (url, body, token) =>
+      org.http4s.Uri.fromString(url) match {
+        case Left(e) => IO.pure(Left(DealWatchError.Transport(url, e.message)))
+        case Right(uri) =>
+          val base = org.http4s
+            .Request[IO](org.http4s.Method.POST, uri)
+            .withEntity(body)
+            .putHeaders(org.http4s.headers.`Content-Type`(org.http4s.MediaType.application.json))
+          val req = token.fold(base)(t =>
+            base.putHeaders(org.http4s.Header.Raw(org.typelevel.ci.CIString("Authorization"), s"Bearer $t"))
+          )
+          client.expect[String](req).attempt.map(_.bimap(e => DealWatchError.Transport(url, e.toString), _ => ()))
+      }
+
+    val hermes = (config.sinks.hermesBaseUrl, config.sinks.hermesTopic) match {
+      case (Some(base), Some(topic)) =>
+        List(new HermesMqSink[IO](HermesMqConfig(base, topic, config.sinks.hermesApiKey.map(_.value)), postJson))
+      case _ => Nil
+    }
+
     val ha = new HomeAssistantSink[IO](
       HaConfig(config.sinks.haWebhookUrl, config.sinks.haMqttTopic, config.locale),
       post,
       publish,
     )
     val fallbacks = config.sinks.ntfyTopicUrl.map(url => new NtfySink[IO](url, config.locale, post)).toList
-    new ChainSink[IO](ha, fallbacks)
+
+    // First configured sink wins; the chain stops at the first success (05.4).
+    val ordered = hermes ++ List(ha) ++ fallbacks
+    new ChainSink[IO](ordered.head, ordered.tail)
   }
 }

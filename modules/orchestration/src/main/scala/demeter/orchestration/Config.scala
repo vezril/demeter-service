@@ -47,7 +47,13 @@ final case class SinkConfig(
     mqttPassword: Option[Secret] = None,
     ntfyTopicUrl: Option[String] = None,
     emailTo: Option[String] = None,
-    order: List[String] = List("home-assistant", "ntfy", "email"),
+    /** HermesMQ speaks its own REST envelope, so it is a sink in its own right
+      * rather than a webhook URL (see HermesMqSink).
+      */
+    hermesBaseUrl: Option[String] = None,
+    hermesTopic: Option[String] = None,
+    hermesApiKey: Option[Secret] = None,
+    order: List[String] = List("hermesmq", "home-assistant", "ntfy", "email"),
 )
 
 final case class ScheduleConfig(
@@ -97,6 +103,8 @@ final case class Config(
       s"http.maxAttempts=${http.maxAttempts}",
       s"history.windowDays=${history.window.toDays}",
       s"sinks.order=${sinks.order.mkString(",")}",
+      s"sinks.hermes=${sinks.hermesBaseUrl.fold("unset")(b => s"$b -> ${sinks.hermesTopic.getOrElse("?")}")}",
+      s"sinks.hermesApiKey=${sinks.hermesApiKey.fold("unset")(_ => "***REDACTED***")}",
       s"schedule=${DailySchedule.parse(schedule.cron, schedule.zone).map(_.describe).getOrElse(schedule.cron)}",
       s"storage.jdbcUrl=${storage.jdbcUrl}",
       s"storage.password=${storage.password.toString}",
@@ -133,6 +141,7 @@ object Config {
 
     val sinkErrors = {
       val configured = List(
+        config.sinks.hermesBaseUrl.map(_ => "hermesmq"),
         config.sinks.haWebhookUrl.orElse(config.sinks.haMqttTopic).map(_ => "home-assistant"),
         config.sinks.ntfyTopicUrl.map(_ => "ntfy"),
         config.sinks.emailTo.map(_ => "email"),
@@ -146,6 +155,15 @@ object Config {
       if (config.sinks.haMqttTopic.isDefined && config.sinks.mqttBrokerUrl.forall(_.trim.isEmpty))
         List(ConfigError.MissingKey("mqtt", "sinks.mqttBrokerUrl"))
       else Nil
+
+    // A broker URL with no topic publishes nowhere, and a topic with no broker
+    // has nowhere to publish to. Both look configured (05.4).
+    val hermesErrors =
+      (config.sinks.hermesBaseUrl, config.sinks.hermesTopic) match {
+        case (Some(_), None) => List(ConfigError.MissingKey("hermesmq", "sinks.hermesTopic"))
+        case (None, Some(_)) => List(ConfigError.MissingKey("hermesmq", "sinks.hermesBaseUrl"))
+        case _               => Nil
+      }
 
     val valueErrors =
       List(
@@ -169,7 +187,8 @@ object Config {
         .map(why => ConfigError.BadSchedule(config.schedule.cron, why))
         .toList
 
-    val errors = enrichmentErrors ++ fallbackErrors ++ sinkErrors ++ mqttErrors ++ valueErrors ++ scheduleErrors
+    val errors =
+      enrichmentErrors ++ fallbackErrors ++ sinkErrors ++ mqttErrors ++ hermesErrors ++ valueErrors ++ scheduleErrors
     if (errors.isEmpty) Right(config) else Left(errors)
   }
 

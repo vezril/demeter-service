@@ -36,6 +36,15 @@ config:
   # At least one sink must be set or the service refuses to start -- alerts with
   # nowhere to go are worse than a failed deploy, because they are silent.
   sinks:
+    # HermesMQ speaks its own REST envelope on its HTTP port, so it is a sink of
+    # its own rather than a webhook URL -- pointing homeAssistantWebhook at it
+    # POSTs a body it rejects. Setting baseUrl requires topic, and vice versa:
+    # either half alone looks configured and delivers nothing.
+    hermesmq:
+      baseUrl: ""       # http://hermesmq.hermesmq.svc.cluster.local:8080
+      topic: ""         # the topic must already exist; POST /v1/topics creates it
+      apiKey: ""        # only when the broker runs with HERMESMQ_AUTH_ENABLED=true
+
     homeAssistantWebhook: ""
     homeAssistantMqttTopic: ""
     ntfyUrl: ""
