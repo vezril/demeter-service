@@ -210,6 +210,7 @@ object Main extends IOApp {
       publish: (String, String) => IO[Either[DealWatchError, Unit]],
   ): AlertSink[IO] = {
     val send = HttpDelivery.sender[IO](client)
+    val read = HttpDelivery.reader[IO](client)
 
     val post: (String, String) => IO[Either[DealWatchError, Unit]] = (url, body) => send(url, body, None, false)
 
@@ -218,7 +219,13 @@ object Main extends IOApp {
 
     val hermes = (config.sinks.hermesBaseUrl, config.sinks.hermesTopic) match {
       case (Some(base), Some(topic)) =>
-        List(new HermesMqSink[IO](HermesMqConfig(base, topic, config.sinks.hermesApiKey.map(_.value)), postJson))
+        List(
+          new HermesMqSink[IO](
+            HermesMqConfig(base, topic, config.sinks.hermesApiKey.map(_.value)),
+            postJson,
+            read,
+          )
+        )
       case _ => Nil
     }
 

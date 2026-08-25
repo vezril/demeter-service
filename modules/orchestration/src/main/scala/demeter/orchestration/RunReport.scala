@@ -31,6 +31,10 @@ final case class RunReport(
       * different situations that all look like silence.
       */
     suppressedByReason: Map[String, Int] = Map.empty,
+    /** Consumers attached to the alert channel, when the sink can tell. None is
+      * "unknown", which must not be read as zero (08.3).
+      */
+    alertAudience: Option[Int] = None,
     degraded: List[DegradedSource] = Nil,
     failures: List[DealWatchError] = Nil,
     elapsed: Option[FiniteDuration] = None,
@@ -65,6 +69,19 @@ object DriftAlarm {
   /** A normally-active watchlist suddenly delivering nothing. */
   final case class AlertVolumeCollapse(matches: Int)
       extends DriftAlarm(s"$matches matches produced zero alerts across a normally-active watchlist")
+
+  /** Alerts published into a channel with nobody attached.
+    *
+    * The most convincing kind of silent failure: every delivery succeeds, the
+    * run report is green, and no human is ever told. A broker accepts messages
+    * whether or not anyone subscribes, and on the first real run this service
+    * published ten alerts to a topic with zero subscriptions -- which the
+    * report happily called ten delivered.
+    */
+  final case class NoAudience(delivered: Int)
+      extends DriftAlarm(
+        s"$delivered alerts were published to a channel with no subscribers — delivery succeeded and nobody was told"
+      )
 }
 
 final case class DriftThresholds(
@@ -104,7 +121,14 @@ object Observability {
         DriftAlarm.AlertVolumeCollapse(report.matches)
       )
 
-    List(decode, zeroResult, alertVolume).flatten
+    // Only a DEFINITE zero alarms. A sink that cannot count its consumers
+    // reports None, and an unknown audience is not evidence of an empty one.
+    val noAudience =
+      Option.when(report.alertsDelivered > 0 && report.alertAudience.contains(0))(
+        DriftAlarm.NoAudience(report.alertsDelivered)
+      )
+
+    List(decode, zeroResult, alertVolume, noAudience).flatten
   }
 
   /** Prometheus text exposition, so Home Assistant or a small dashboard can chart it. */
@@ -126,6 +150,7 @@ object Observability {
       "\n" + metric(s"""alerts_suppressed_reason{reason="$reason"}""", n.toDouble)
     }.mkString + List(
       "",
+      metric("alert_audience", report.alertAudience.map(_.toDouble).getOrElse(-1.0)),
       metric("sources_degraded", report.degraded.size.toDouble),
       metric("decode_failure_rate", report.decodeFailureRate),
       metric("run_seconds", report.elapsed.map(_.toSeconds.toDouble).getOrElse(0.0)),

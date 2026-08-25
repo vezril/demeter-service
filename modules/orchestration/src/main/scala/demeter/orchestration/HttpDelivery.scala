@@ -22,6 +22,27 @@ import demeter.foundations.DealWatchError
   */
 object HttpDelivery {
 
+  /** A GET that returns the body, for the small amount of reading a sink does
+    * about itself (how many consumers it has). Failures stay values.
+    */
+  def reader[F[_]: Concurrent](client: Client[F]): (String, Option[String]) => F[Either[DealWatchError, String]] =
+    (url, token) =>
+      Uri.fromString(url) match {
+        case Left(e) => Concurrent[F].pure(Left(DealWatchError.Transport(url, e.message)))
+        case Right(uri) =>
+          val base = Request[F](Method.GET, uri)
+          val req  = token.fold(base)(t => base.putHeaders(Header.Raw(CIString("Authorization"), s"Bearer $t")))
+          client
+            .run(req)
+            .use { response =>
+              response.bodyText.compile.string.map { body =>
+                if (response.status.isSuccess) Right(body): Either[DealWatchError, String]
+                else Left(DealWatchError.Transport(url, s"HTTP ${response.status.code}"))
+              }
+            }
+            .handleError(e => Left(DealWatchError.Transport(url, e.toString)))
+      }
+
   def sender[F[_]: Concurrent](
       client: Client[F]
   ): (String, String, Option[String], Boolean) => F[Either[DealWatchError, Unit]] =

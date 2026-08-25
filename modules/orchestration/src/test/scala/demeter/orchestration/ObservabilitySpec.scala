@@ -109,6 +109,43 @@ final class ObservabilitySpec extends AnyFunSuite {
     assert(!Observability.alarms(report, flipp).exists(_.isInstanceOf[DriftAlarm.AlertVolumeCollapse]))
   }
 
+  test("alerts published to a channel with no subscribers raise an alarm") {
+    // The most convincing silent failure there is: every delivery succeeded,
+    // the report is green, and no human was told. A broker accepts messages
+    // whether or not anyone is listening.
+    val report = RunReport(flyersListed = 100, matches = 12, alertsDelivered = 10, alertAudience = Some(0))
+    val alarms = Observability.alarms(report, flipp)
+    assert(alarms.exists(_.isInstanceOf[DriftAlarm.NoAudience]))
+    assert(alarms.collectFirst { case a: DriftAlarm.NoAudience => a.message }.exists(_.contains("10")))
+  }
+
+  test("a channel with subscribers raises nothing") {
+    val report = RunReport(flyersListed = 100, matches = 12, alertsDelivered = 10, alertAudience = Some(3))
+    assert(!Observability.alarms(report, flipp).exists(_.isInstanceOf[DriftAlarm.NoAudience]))
+  }
+
+  test("an unknown audience is not an empty one") {
+    // A webhook cannot count subscribers, and a broker that fails the query has
+    // an unknown audience. Alarming on either would cry wolf every run.
+    val report = RunReport(flyersListed = 100, matches = 12, alertsDelivered = 10, alertAudience = None)
+    assert(!Observability.alarms(report, flipp).exists(_.isInstanceOf[DriftAlarm.NoAudience]))
+  }
+
+  test("no subscribers is not an alarm when nothing was sent") {
+    // A run that alerted nothing has nothing to go unheard; the empty channel
+    // only matters because alerts went into it.
+    val report =
+      RunReport(flyersListed = 100, matches = 12, alertsDelivered = 0, alertsSuppressed = 12, alertAudience = Some(0))
+    assert(!Observability.alarms(report, flipp).exists(_.isInstanceOf[DriftAlarm.NoAudience]))
+  }
+
+  test("the audience is exposed as a metric, with unknown distinguishable from zero") {
+    assert(Observability.prometheus(RunReport(alertAudience = Some(0))).contains("demeter_alert_audience 0.0"))
+    assert(Observability.prometheus(RunReport(alertAudience = Some(4))).contains("demeter_alert_audience 4.0"))
+    // -1 rather than 0, so a dashboard cannot read "could not ask" as "nobody home"
+    assert(Observability.prometheus(RunReport(alertAudience = None)).contains("demeter_alert_audience -1.0"))
+  }
+
   // --- 08.2 degradation ---
 
   test("a Flipp bot wall with a fallback switches source and alerts the operator") {
