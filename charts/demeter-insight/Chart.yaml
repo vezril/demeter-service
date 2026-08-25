@@ -3,7 +3,7 @@ name: demeter-insight
 description: Read-only HTTP surface over demeter's price history and run reports
 type: application
 version: 0.1.0
-appVersion: "0.4.0"
+appVersion: "0.4.1"
 home: https://github.com/vezril/demeter-service
 sources:
   - https://github.com/vezril/demeter-service
