@@ -1,0 +1,19 @@
+<!--
+  Without a config on the classpath logback defaults the root logger to DEBUG,
+  and the connection pool alone then emits a line every fifteen seconds forever.
+  The same omission buried demeter's run report on its first deploy.
+-->
+<configuration>
+  <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder>
+      <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} -- %msg%n</pattern>
+    </encoder>
+  </appender>
+
+  <root level="${DEMETER_LOG_LEVEL:-INFO}">
+    <appender-ref ref="STDOUT" />
+  </root>
+
+  <logger name="com.zaxxer.hikari" level="WARN" />
+  <logger name="org.postgresql" level="WARN" />
+</configuration>

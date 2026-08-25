@@ -40,14 +40,15 @@ spec:
           ports:
             - name: http
               containerPort: {{ .Values.port }}
-          # This service DOES bind a socket, so unlike the daily job a probe is
-          # meaningful here. It hits a real endpoint rather than a synthetic
-          # /healthz: a 503 from an unreachable database is exactly the state
-          # that should take the pod out of service, and a 404 (no runs yet) is
-          # a healthy answer.
+          # /health, not /v1/runs/latest. Probing the data endpoint conflates
+          # "can serve" with "has data": before the first daily run it answers
+          # 404 and the pod never becomes Ready, so a working service is held
+          # out of rotation until tomorrow morning. /health answers 200 when the
+          # database is reachable and 503 when it is not, which is exactly the
+          # state that should take a pod out of service.
           readinessProbe:
             httpGet:
-              path: /v1/runs/latest
+              path: /health
               port: http
             initialDelaySeconds: 10
             periodSeconds: 15

@@ -17,7 +17,7 @@ would not.
 - [x] 1.4 `GET /v1/runs/latest` — the first endpoint, chosen because it replaces the `kubectl logs` habit immediately
 - [ ] 1.5 `GET /v1/products/{productKey}/history` — series with per-point confidence, statistics from `PriceStats.rollingStats`, verdict from `DealVerdict`; test pins that the API's numbers equal the library's
 - [ ] 1.6 `GET /v1/watches` and `GET /v1/alerts`
-- [ ] 1.7 Health: not-ready when Postgres is unreachable; no stale cached answers
+- [x] 1.7 `GET /health`: 200 when the database answers, 503 when it does not. Brought forward from its place in the list because the readiness probe needed it — probing the data endpoint made a working service unready until its first run
 - [x] 1.8 `charts/demeter-insight`: Deployment/Service/Secret/Ingress, ingress class omitted when empty, readiness probe on a real endpoint rather than a synthetic one. Image built from the same Dockerfile via `--build-arg MODULE=insight`, published as the `-insight` tag variant; CI lints the chart and starts the image
 - [ ] 1.9 **Gate**: run against the live NAS database for at least one full daily cycle; confirm the run report matches the logged exposition exactly
 

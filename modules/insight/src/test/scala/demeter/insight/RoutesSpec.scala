@@ -35,8 +35,9 @@ final class RoutesSpec extends AnyFunSuite {
 
   private def app(queries: RunQueries[IO]) = new Routes[IO](queries).routes.orNotFound
 
-  private def stub(result: IO[Option[RunView]]): RunQueries[IO] = new RunQueries[IO] {
+  private def stub(result: IO[Option[RunView]], up: Boolean = true): RunQueries[IO] = new RunQueries[IO] {
     def latest: IO[Option[RunView]] = result
+    def reachable: IO[Boolean]      = IO.pure(up)
   }
 
   private def get(queries: RunQueries[IO], path: String = "/v1/runs/latest"): Response[IO] =
@@ -100,6 +101,21 @@ final class RoutesSpec extends AnyFunSuite {
   test("a database outage is 503, never an empty result") {
     // An outage rendering as "no data" is how a broken view looks healthy.
     val response = get(stub(IO.raiseError(new java.sql.SQLException("connection refused"))))
+    assert(response.status == Status.ServiceUnavailable)
+  }
+
+  test("health is UP when the database answers, even with no runs yet") {
+    // The bug this exists for: probing the data endpoint conflates "can serve"
+    // with "has data". Before the first daily run that returns 404, a pod
+    // probing it never becomes Ready, and a working service is held out of
+    // rotation until tomorrow morning.
+    val response = get(stub(IO.pure(None)), "/health")
+    assert(response.status == Status.Ok)
+    assert(bodyJson(response).hcursor.get[String]("status").contains("UP"))
+  }
+
+  test("health is 503 when the database does not answer") {
+    val response = get(stub(IO.pure(None), up = false), "/health")
     assert(response.status == Status.ServiceUnavailable)
   }
 

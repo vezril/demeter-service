@@ -21,6 +21,12 @@ import io.circe.parser.parse
   */
 trait RunQueries[F[_]] {
   def latest: F[Option[RunView]]
+
+  /** Can this service answer at all? Distinct from "is there data": a database
+    * that is reachable and empty is healthy, and conflating the two makes a
+    * service that has simply never had a run look broken.
+    */
+  def reachable: F[Boolean]
 }
 
 final class DoobieRunQueries[F[_]: MonadCancelThrow](xa: Transactor[F]) extends RunQueries[F] {
@@ -47,6 +53,9 @@ final class DoobieRunQueries[F[_]: MonadCancelThrow](xa: Transactor[F]) extends 
       List[String],
       Boolean,
   )
+
+  def reachable: F[Boolean] =
+    sql"SELECT 1".query[Int].option.transact(xa).attempt.map(_.isRight)
 
   def latest: F[Option[RunView]] =
     sql"""SELECT id, started_at, finished_at, elapsed_seconds,
