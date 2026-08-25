@@ -23,12 +23,30 @@ RUN --mount=type=cache,target=/root/.cache/coursier \
     sbt -batch orchestration/stage
 
 # ---------- runtime ----------
-FROM eclipse-temurin:21-jre-noble AS runtime
+# musl, not glibc, and that is the whole point.
+#
+# k3s 1.21 on the target NAS ships a 2021-era runc whose default seccomp profile
+# denies clone3 with EPERM rather than ENOSYS. glibc 2.34+ (so any current
+# Ubuntu base) calls clone3 and can only fall back on ENOSYS, so every JVM
+# thread creation fails:
+#
+#   Failed to start thread "GC Thread#0" - pthread_create failed (EPERM)
+#
+# `java -version` then prints nothing, and the launcher's own detection reports
+# "No java installations was detected" -- which sends you hunting for a missing
+# JRE that is in fact right there. musl does not use clone3, so the JVM starts
+# normally and the pod keeps seccompProfile: RuntimeDefault instead of having to
+# drop a security control to accommodate an old kernel.
+FROM eclipse-temurin:21-jre-alpine AS runtime
+
+# The launcher sbt-native-packager generates is #!/usr/bin/env bash, and Alpine
+# ships only BusyBox sh.
+RUN apk add --no-cache bash
 
 # The service holds no local state -- everything durable is in Postgres -- so it
 # runs unprivileged with a read-only-friendly layout and no writable app dir.
-RUN groupadd --system --gid 10001 demeter \
- && useradd --system --uid 10001 --gid demeter --home-dir /opt/demeter --shell /usr/sbin/nologin demeter
+RUN addgroup -S -g 10001 demeter \
+ && adduser -S -u 10001 -G demeter -h /opt/demeter -s /sbin/nologin demeter
 
 COPY --from=builder --chown=root:root /src/modules/orchestration/target/universal/stage /opt/demeter
 
