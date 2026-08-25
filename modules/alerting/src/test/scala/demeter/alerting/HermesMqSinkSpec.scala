@@ -28,7 +28,7 @@ final class HermesMqSinkSpec extends AnyFunSuite {
   /** Captures what would have been sent, so the shape is asserted rather than mocked away. */
   private def capturing(): (collection.mutable.ListBuffer[(String, String, Option[String])], HermesMqSink[Id]) = {
     val sent = collection.mutable.ListBuffer.empty[(String, String, Option[String])]
-    val sink = new HermesMqSink[Id](config, (u, b, t) => { sent += ((u, b, t)); Right(()) })
+    val sink = new HermesMqSink[Id](config, (u, b, t) => { sent += ((u, b, t)); Right(()) }, (_, _) => Right("[]"))
     (sent, sink)
   }
 
@@ -96,7 +96,11 @@ final class HermesMqSinkSpec extends AnyFunSuite {
   test("an api key is passed out of band, never inside the published body") {
     val sent = collection.mutable.ListBuffer.empty[(String, String, Option[String])]
     val sink =
-      new HermesMqSink[Id](config.copy(apiKey = Some("s3cret")), (u, b, t) => { sent += ((u, b, t)); Right(()) })
+      new HermesMqSink[Id](
+        config.copy(apiKey = Some("s3cret")),
+        (u, b, t) => { sent += ((u, b, t)); Right(()) },
+        (_, _) => Right("[]"),
+      )
     sink.deliver(alert())
     assert(sent.head._3.contains("s3cret"), "the token reaches the transport")
     assert(!sent.head._2.contains("s3cret"), "but never the payload, which gets logged")
@@ -104,11 +108,50 @@ final class HermesMqSinkSpec extends AnyFunSuite {
 
   test("a transport failure is returned as a value, so one dead sink cannot sink the run") {
     val boom = DealWatchError.Transport("http://hermes:8080", "connection refused")
-    val sink = new HermesMqSink[Id](config, (_, _, _) => Left(boom))
+    val sink = new HermesMqSink[Id](config, (_, _, _) => Left(boom), (_, _) => Right("[]"))
     assert(sink.deliver(alert()) == Left(boom))
   }
 
   test("the sink names itself, so a run report can say which channel delivered") {
-    assert(new HermesMqSink[Id](config, (_, _, _) => Right(())).name == SinkName("hermesmq"))
+    assert(new HermesMqSink[Id](config, (_, _, _) => Right(()), (_, _) => Right("[]")).name == SinkName("hermesmq"))
+  }
+
+  // --- audience (08.3) ---
+
+  private val subs =
+    """[{"subscriptionId":"a","topicId":"demeter-deals"},
+       |{"subscriptionId":"b","topicId":"other"},
+       |{"subscriptionId":"c","topicId":"demeter-deals"}]""".stripMargin
+
+  test("subscribers are counted for our topic only") {
+    assert(HermesMqSink.countSubscribers(subs, "demeter-deals").contains(2))
+    assert(HermesMqSink.countSubscribers(subs, "other").contains(1))
+  }
+
+  test("a topic nobody subscribes to counts zero, which is the case worth alarming on") {
+    assert(HermesMqSink.countSubscribers(subs, "unwatched").contains(0))
+    assert(HermesMqSink.countSubscribers("[]", "demeter-deals").contains(0))
+  }
+
+  test("an unreadable answer is unknown, not empty") {
+    // Reporting a failed query as zero would raise a false alarm on every run
+    // the broker happens to be unreachable.
+    assert(HermesMqSink.countSubscribers("not json", "demeter-deals").isEmpty)
+    assert(HermesMqSink.countSubscribers("""{"error":"nope"}""", "demeter-deals").isEmpty)
+  }
+
+  test("the audience is read from the subscriptions endpoint") {
+    assert(HermesMqSink.subscriptionsUrl(config) == "http://hermes:8080/v1/subscriptions")
+  }
+
+  test("a broker that cannot be asked reports an unknown audience") {
+    val sink =
+      new HermesMqSink[Id](config, (_, _, _) => Right(()), (_, _) => Left(DealWatchError.Transport("u", "refused")))
+    assert(sink.audience.isEmpty)
+  }
+
+  test("a live broker reports the real count") {
+    val sink = new HermesMqSink[Id](config, (_, _, _) => Right(()), (_, _) => Right(subs))
+    assert(sink.audience.contains(2))
   }
 }

@@ -149,6 +149,29 @@ final class DailyRunSpec extends AnyFunSuite {
     assert(obs.saved.get.unsafeRunSync().size == 1)
   }
 
+  test("a run that delivers records how many consumers were listening") {
+    val flyers = List(flyer(1))
+    val items  = List(item("i1", 1L, "Natrel Milk 4 L", Some(499L)))
+    val (report, sink, _, _, _) =
+      runWith(new ScriptedSource(flyers, _ => Right(items)), sink = MemSink.create(subscribers = Some(0)))
+
+    assume(sink.delivered.get.unsafeRunSync().nonEmpty, "this case needs a delivery to be meaningful")
+    assert(report.alertsDelivered > 0)
+    assert(report.alertAudience.contains(0), "the empty channel must reach the report, or 08.3 cannot see it")
+    assert(Observability.alarms(report, SourceName("flipp")).exists(_.isInstanceOf[DriftAlarm.NoAudience]))
+  }
+
+  test("a run that delivers nothing does not ask who was listening") {
+    // Nothing was sent, so an empty channel is not a problem to report. The
+    // sink offers a count here and the run must still leave it unknown.
+    val (report, sink, _, _, _) =
+      runWith(new ScriptedSource(Nil, _ => Right(Nil)), sink = MemSink.create(subscribers = Some(0)))
+
+    assert(sink.delivered.get.unsafeRunSync().isEmpty)
+    assert(report.alertAudience.isEmpty, "an unasked question has no answer")
+    assert(!Observability.alarms(report, SourceName("flipp")).exists(_.isInstanceOf[DriftAlarm.NoAudience]))
+  }
+
   test("the run is idempotent within a day: no duplicate observations, no duplicate alerts") {
     val flyers   = List(flyer(1))
     val items    = List(item("i1", 1L, "Natrel Milk 4 L", Some(499L)))

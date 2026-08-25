@@ -25,13 +25,15 @@ final class SinksSpec extends AnyFunSuite {
   }
 
   private def failing(sinkName: String) = new AlertSink[IO] {
-    def name: SinkName = SinkName(sinkName)
+    def name: SinkName            = SinkName(sinkName)
+    def audience: IO[Option[Int]] = IO.pure(None)
     def deliver(a: Alert): IO[Either[DealWatchError, Unit]] =
       IO.pure(Left(DealWatchError.HttpStatus(503, s"https://$sinkName")))
   }
 
   private def succeeding(sinkName: String, calls: Ref[IO, List[String]]) = new AlertSink[IO] {
     def name: SinkName                                      = SinkName(sinkName)
+    def audience: IO[Option[Int]]                           = IO.pure(None)
     def deliver(a: Alert): IO[Either[DealWatchError, Unit]] = calls.update(_ :+ sinkName).as(Right(()))
   }
 

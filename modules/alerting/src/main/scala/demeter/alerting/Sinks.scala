@@ -1,5 +1,6 @@
 package demeter.alerting
 
+import cats.Applicative
 import cats.effect.kernel.Concurrent
 import cats.syntax.all._
 import demeter.foundations.{DealWatchError, Locale}
@@ -16,6 +17,14 @@ final case class SinkName(value: String) extends AnyVal
 trait AlertSink[F[_]] {
   def name: SinkName
   def deliver(alert: Alert): F[Either[DealWatchError, Unit]]
+
+  /** How many consumers are attached to this channel, when the sink can find
+    * out. `None` means "cannot tell", which is NOT the same as zero: a webhook
+    * has no notion of subscribers, and a broker that fails the query has an
+    * unknown audience rather than an empty one. Only a definite zero is worth
+    * alarming on (08.3).
+    */
+  def audience: F[Option[Int]]
 }
 
 final case class HaConfig(
@@ -36,6 +45,9 @@ final class HomeAssistantSink[F[_]](
 
   val name: SinkName = SinkName("home-assistant")
 
+  // A webhook has no subscribers to count.
+  def audience: F[Option[Int]] = F.pure(None)
+
   def deliver(alert: Alert): F[Either[DealWatchError, Unit]] = {
     val body = alert.renderStructured.noSpaces
     (config.webhookUrl, config.mqttTopic) match {
@@ -52,8 +64,10 @@ final class NtfySink[F[_]](
     topicUrl: String,
     locale: Locale,
     post: (String, String) => F[Either[DealWatchError, Unit]],
-) extends AlertSink[F] {
+)(implicit F: Applicative[F])
+    extends AlertSink[F] {
   val name: SinkName                                         = SinkName("ntfy")
+  def audience: F[Option[Int]]                               = F.pure(None)
   def deliver(alert: Alert): F[Either[DealWatchError, Unit]] = post(topicUrl, alert.renderPlain(locale))
 }
 
@@ -61,8 +75,10 @@ final class NtfySink[F[_]](
 final class EmailSink[F[_]](
     locale: Locale,
     send: (String, String) => F[Either[DealWatchError, Unit]],
-) extends AlertSink[F] {
-  val name: SinkName = SinkName("email")
+)(implicit F: Applicative[F])
+    extends AlertSink[F] {
+  val name: SinkName           = SinkName("email")
+  def audience: F[Option[Int]] = F.pure(None)
   def deliver(alert: Alert): F[Either[DealWatchError, Unit]] =
     send(s"Deal: ${alert.watchLabel}", alert.renderPlain(locale))
 }
@@ -77,6 +93,11 @@ final class ChainSink[F[_]](
     extends AlertSink[F] {
 
   val name: SinkName = SinkName("chain")
+
+  /** The chain reports the audience of the sink that actually carries alerts,
+    * which is the first one configured (05.4).
+    */
+  def audience: F[Option[Int]] = primary.audience
 
   def deliver(alert: Alert): F[Either[DealWatchError, Unit]] =
     deliverDetailed(alert).map {

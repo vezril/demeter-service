@@ -3,7 +3,10 @@ package demeter.alerting
 import java.security.MessageDigest
 import java.nio.charset.StandardCharsets
 
+import cats.Functor
+import cats.syntax.all._
 import io.circe.Json
+import io.circe.parser.parse
 import io.circe.syntax._
 import demeter.foundations.DealWatchError
 
@@ -34,15 +37,42 @@ final class HermesMqSink[F[_]](
       * the body so the token never reaches a log line that dumps the payload.
       */
     postJson: (String, String, Option[String]) => F[Either[DealWatchError, Unit]],
-) extends AlertSink[F] {
+    /** (url, bearerToken) => body. Used to count subscribers; a broker that
+      * cannot be asked has an unknown audience, never an empty one.
+      */
+    getJson: (String, Option[String]) => F[Either[DealWatchError, String]],
+)(implicit F: Functor[F])
+    extends AlertSink[F] {
 
   val name: SinkName = SinkName("hermesmq")
+
+  /** Publishing into a topic nobody subscribes to is silent by construction:
+    * the broker accepts every message and no one ever reads one. That is
+    * indistinguishable from working, which is what 08.3 exists to catch.
+    */
+  def audience: F[Option[Int]] =
+    getJson(HermesMqSink.subscriptionsUrl(config), config.apiKey).map {
+      case Right(body) => HermesMqSink.countSubscribers(body, config.topic)
+      case Left(_)     => None
+    }
 
   def deliver(alert: Alert): F[Either[DealWatchError, Unit]] =
     postJson(HermesMqSink.publishUrl(config), HermesMqSink.envelope(alert).noSpaces, config.apiKey)
 }
 
 object HermesMqSink {
+
+  def subscriptionsUrl(config: HermesMqConfig): String =
+    s"${config.baseUrl.stripSuffix("/")}/v1/subscriptions"
+
+  /** Counts the subscriptions bound to one topic. Returns None when the
+    * response cannot be read at all -- an unreadable answer means the audience
+    * is unknown, and reporting that as zero would raise a false alarm.
+    */
+  def countSubscribers(body: String, topic: String): Option[Int] =
+    parse(body).toOption
+      .flatMap(_.asArray)
+      .map(_.count(_.hcursor.get[String]("topicId").contains(topic)))
 
   def publishUrl(config: HermesMqConfig): String =
     s"${config.baseUrl.stripSuffix("/")}/v1/topics/${config.topic}/messages"

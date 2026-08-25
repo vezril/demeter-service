@@ -125,16 +125,21 @@ object InMemory {
     def create(): MemLedger = new MemLedger(Ref.of[IO, Map[FlyerId, (Instant, Instant)]](Map.empty).unsafeRunSync())
   }
 
-  final class MemSink(val delivered: Ref[IO, Vector[Alert]], fail: Boolean = false) extends AlertSink[IO] {
-    def name: SinkName = SinkName("memory")
+  final class MemSink(
+      val delivered: Ref[IO, Vector[Alert]],
+      fail: Boolean = false,
+      subscribers: Option[Int] = None,
+  ) extends AlertSink[IO] {
+    def name: SinkName            = SinkName("memory")
+    def audience: IO[Option[Int]] = IO.pure(subscribers)
     def deliver(alert: Alert): IO[Either[DealWatchError, Unit]] =
       if (fail) IO.pure(Left(DealWatchError.HttpStatus(503, "memory")))
       else delivered.update(_ :+ alert).as(Right(()))
   }
 
   object MemSink {
-    def create(fail: Boolean = false): MemSink =
-      new MemSink(Ref.of[IO, Vector[Alert]](Vector.empty).unsafeRunSync(), fail)
+    def create(fail: Boolean = false, subscribers: Option[Int] = None): MemSink =
+      new MemSink(Ref.of[IO, Vector[Alert]](Vector.empty).unsafeRunSync(), fail, subscribers)
   }
 
   /** Survives across DailyRun instances in a test, the way the real table

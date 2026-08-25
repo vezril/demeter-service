@@ -44,10 +44,15 @@ final class DailyRun[F[_]](
       report    <- Ref.of[F, RunReport](RunReport())
       // Rehydrate what has already been alerted BEFORE matching. Without this a
       // restart re-alerts every deal still inside its flyer window (05.2).
-      _        <- rehydrateAlertState(startedAt)
-      _        <- listAndProcess(report)
-      endedAt  <- C.realTime
-      finished <- report.updateAndGet(r => r.copy(elapsed = Some(endedAt - startedAt)))
+      _       <- rehydrateAlertState(startedAt)
+      _       <- listAndProcess(report)
+      endedAt <- C.realTime
+      // Asked once, after delivery, and only when something was actually sent:
+      // an empty audience matters because alerts went into it, and a run that
+      // alerted nothing has nothing to be unheard.
+      delivered <- report.get.map(_.alertsDelivered)
+      audience  <- if (delivered > 0) sink.audience else F.pure(Option.empty[Int])
+      finished  <- report.updateAndGet(r => r.copy(elapsed = Some(endedAt - startedAt), alertAudience = audience))
     } yield finished
 
   private def rehydrateAlertState(startedAt: scala.concurrent.duration.FiniteDuration): F[Unit] = {
