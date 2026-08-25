@@ -209,31 +209,12 @@ object Main extends IOApp {
       client: org.http4s.client.Client[IO],
       publish: (String, String) => IO[Either[DealWatchError, Unit]],
   ): AlertSink[IO] = {
-    val post: (String, String) => IO[Either[DealWatchError, Unit]] = (url, body) =>
-      org.http4s.Uri.fromString(url) match {
-        case Left(e) => IO.pure(Left(DealWatchError.Transport(url, e.message)))
-        case Right(uri) =>
-          client
-            .expect[String](org.http4s.Request[IO](org.http4s.Method.POST, uri).withEntity(body))
-            .attempt
-            .map(_.bimap(e => DealWatchError.Transport(url, e.toString), _ => ()))
-      }
+    val send = HttpDelivery.sender[IO](client)
 
-    // Same transport as `post`, plus an optional bearer. Kept separate so the
-    // token is never folded into a body that gets logged.
-    val postJson: (String, String, Option[String]) => IO[Either[DealWatchError, Unit]] = (url, body, token) =>
-      org.http4s.Uri.fromString(url) match {
-        case Left(e) => IO.pure(Left(DealWatchError.Transport(url, e.message)))
-        case Right(uri) =>
-          val base = org.http4s
-            .Request[IO](org.http4s.Method.POST, uri)
-            .withEntity(body)
-            .putHeaders(org.http4s.headers.`Content-Type`(org.http4s.MediaType.application.json))
-          val req = token.fold(base)(t =>
-            base.putHeaders(org.http4s.Header.Raw(org.typelevel.ci.CIString("Authorization"), s"Bearer $t"))
-          )
-          client.expect[String](req).attempt.map(_.bimap(e => DealWatchError.Transport(url, e.toString), _ => ()))
-      }
+    val post: (String, String) => IO[Either[DealWatchError, Unit]] = (url, body) => send(url, body, None, false)
+
+    val postJson: (String, String, Option[String]) => IO[Either[DealWatchError, Unit]] =
+      (url, body, token) => send(url, body, token, true)
 
     val hermes = (config.sinks.hermesBaseUrl, config.sinks.hermesTopic) match {
       case (Some(base), Some(topic)) =>
