@@ -84,6 +84,20 @@ lazy val pricehistory = (project in file("modules/pricehistory"))
   .settings(libraryDependencies ++= Seq(cats, catsEffect) ++ doobie)
   .dependsOn(foundations, persistence)
 
+// A read-only reader over the same PostgreSQL schema, deliberately NOT part of
+// demeter-service: folding an HTTP surface into the batch job would make the
+// daily run and the UI share a JVM, a failure domain and a deploy. It depends on
+// `foundations` only -- it owns its own queries and its own wire model rather
+// than importing demeter's stores, so a column rename breaks one file loudly at
+// compile time instead of silently changing what an endpoint returns.
+lazy val insight = (project in file("modules/insight"))
+  .settings(name := "demeter-insight")
+  .settings(commonSettings)
+  .settings(Compile / mainClass := Some("demeter.insight.Main"))
+  .enablePlugins(JavaAppPackaging)
+  .settings(libraryDependencies ++= Seq(cats, catsEffect, log4cats, logback) ++ http4s ++ circe ++ doobie)
+  .dependsOn(foundations)
+
 lazy val orchestration = (project in file("modules/orchestration"))
   .settings(name := "demeter-orchestration")
   .settings(commonSettings)
@@ -125,4 +139,5 @@ lazy val root = (project in file("."))
     enrichment,
     pricehistory,
     orchestration,
+    insight,
   )
