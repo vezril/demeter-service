@@ -96,7 +96,17 @@ lazy val insight = (project in file("modules/insight"))
   .settings(Compile / mainClass := Some("demeter.insight.Main"))
   .enablePlugins(JavaAppPackaging)
   .settings(libraryDependencies ++= Seq(cats, catsEffect, log4cats, logback) ++ http4s ++ circe ++ doobie)
-  .dependsOn(foundations)
+  // persistence and pricehistory, deliberately, and contrary to this change's
+  // first design note ("owns its own queries").
+  //
+  // That rule earns its keep for the run report, whose row is flat and whose
+  // type is orchestration's. It does not for observations: PriceObservation has
+  // twenty fields with nested BilingualText/Size/UnitPrice, and a second mapper
+  // for it would duplicate exactly the code whose failure mode is silently
+  // swapping two same-typed columns -- a wrong price that still parses. The
+  // stats are reused for the stated reason: one implementation cannot drift
+  // from another, and the UI must quote the same median an alert does.
+  .dependsOn(foundations, persistence, pricehistory)
 
 lazy val orchestration = (project in file("modules/orchestration"))
   .settings(name := "demeter-orchestration")
