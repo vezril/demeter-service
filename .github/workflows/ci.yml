@@ -160,6 +160,20 @@ jobs:
             *x*x*x) echo "executable by others" ;;
             *) echo "::error::launcher is $MODE -- a non-root container cannot exec it"; exit 1 ;;
           esac
+      - name: The JVM must actually start under the pod's constraints
+        # Building an image proves it builds, not that it runs. A v0.1.0 image
+        # built and pushed cleanly and then failed on the target cluster with
+        # "No java installations was detected", because the JVM could not create
+        # threads and `java -version` printed nothing. Reaching the config error
+        # proves the JVM booted and the application's own main ran.
+        run: |
+          OUT=$(docker run --rm --read-only --user 10001:10001 --tmpfs /tmp \
+                  demeter-ci:check 2>&1 | head -5 || true)
+          echo "$OUT"
+          if ! echo "$OUT" | grep -q "config error"; then
+            echo "::error::the image did not reach its own config validation -- the JVM never started"
+            exit 1
+          fi
 
   # The mutation gate answers a question the test count cannot: do the suites
   # actually kill a mutant, or do they merely execute the line? It went unrun
