@@ -3,8 +3,8 @@ name: demeter-service
 description: Polls Canadian retail flyer data, builds price history, and alerts on genuine deals via Home Assistant
 type: application
 # Chart version. Bump on chart changes; appVersion tracks the service image.
-version: 0.4.1
-appVersion: "0.4.1"
+version: 0.4.2
+appVersion: "0.4.2"
 home: https://github.com/vezril/demeter-service
 sources:
   - https://github.com/vezril/demeter-service
