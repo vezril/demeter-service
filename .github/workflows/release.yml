@@ -52,3 +52,55 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  release:
+    name: Publish the GitHub Release
+    runs-on: ubuntu-latest
+    # Only after the image exists. A Release whose notes point at a tag that has
+    # no pullable image is worse than no Release at all -- it reads as done.
+    needs: image
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Compose the notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+
+          # GitHub's own generator lists the merged PRs since the previous tag.
+          # It is fetched separately rather than via `gh release create
+          # --generate-notes`, so the deploy preamble below can sit ABOVE it
+          # instead of being replaced by it.
+          gh api "repos/${GITHUB_REPOSITORY}/releases/generate-notes" \
+            -f tag_name="$TAG" \
+            -q .body > /tmp/generated.md
+
+          cat > /tmp/notes.md <<EOF
+          \`\`\`bash
+          helm upgrade --install demeter charts/demeter-service \\
+            -n demeter --create-namespace -f my-values.yaml
+          \`\`\`
+
+          Image: \`ghcr.io/${GITHUB_REPOSITORY}:${VERSION}\` (linux/amd64, linux/arm64).
+
+          The service binds no port: it wakes on its own schedule, writes a run
+          report to the log, and pushes alerts outward to Home Assistant. Start
+          from \`charts/demeter-service/values-nas.example.yaml\`; \`config.postalCode\`,
+          \`postgresql.password\` and at least one alert sink are required. The
+          watchlist lives in the database, not in the chart values.
+
+          EOF
+          cat /tmp/generated.md >> /tmp/notes.md
+
+      - name: Create the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" --title "$TAG" --notes-file /tmp/notes.md --verify-tag
