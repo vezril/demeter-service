@@ -1,3 +1,14 @@
+## 0. Prerequisite — persist the run report (was 3.1)
+
+Moved ahead of 1.4, which cannot be built without it: the report existed only as
+a log line. Modifies `demeter-service`, which this proposal originally said it
+would not.
+
+- [x] 0.1 `run_report` table: counts, per-reason suppression map as jsonb, alert audience nullable (NULL is "could not tell", not zero), degraded sources, failures, partial flag
+- [x] 0.2 `RunReportStore` + `DoobieRunReportStore` in `orchestration` (RunReport is an 08 type that 03 cannot see, mirroring where the alert ledger lives)
+- [x] 0.3 Write at the end of every run; a store failure is warned, never raised
+- [x] 0.4 `@boundary` round-trip tests against real Postgres: suppression map survives as a map, unknown audience stays unknown and zero stays zero, `latest` orders by finished_at rather than insertion
+
 ## 1. Phase 1 — the API alone (no frontend)
 
 - [ ] 1.1 `modules/insight` skeleton: sbt module depending on `foundations`, `persistence`, `pricehistory`; http4s ember server; config from environment, validated fail-fast like `orchestration`
@@ -22,5 +33,4 @@
 
 ## 3. Deferred, deliberately
 
-- [ ] 3.1 Persisted run history (`run_report` table) — the first change here that would modify `demeter-service`; only if trends prove necessary
 - [ ] 3.2 Prometheus exposition served by `insight-api` on demeter's behalf — attractive, but the metrics would describe a service other than the one serving them
