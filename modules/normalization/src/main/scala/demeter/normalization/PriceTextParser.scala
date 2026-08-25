@@ -41,6 +41,12 @@ object PriceTextParser {
   def parsePriceToken(text: String, locale: Locale): Option[PriceToken] = {
     val (unit, remainder) = extractUnit(text)
     val trimmed           = remainder.trim
+    // A fast path, not a behavioural gate: both parsers below independently
+    // require a digit (CentsPattern needs \d+, DollarPattern's number group ends
+    // in one), so a digitless token yields None either way. Mutation testing
+    // reports this line as a permanent survivor for exactly that reason -- it is
+    // an equivalent mutant, not a coverage gap, so please do not "fix" it with a
+    // test that cannot exist.
     if (trimmed.isEmpty || !trimmed.exists(_.isDigit)) None
     else parseCents(trimmed).orElse(parseDollars(trimmed)).map(PriceToken(_, unit))
   }
