@@ -17,7 +17,7 @@ Demeter also holds data nothing currently displays: 19,626 price observations ac
 - Add a **read-only** insight service, separate from `demeter-service`, that reads the existing PostgreSQL schema and exposes it over HTTP.
 - Add a browser UI over that API for four views: product price history, the last run's report, per-watch health, and alert history.
 - Grant the new service its own PostgreSQL role with `SELECT` only. It must be structurally incapable of writing.
-- Leave `demeter-service` unchanged. It keeps binding no socket, and the daily run keeps its own failure domain.
+- Persist the run report. `demeter-service` IS modified for this, contrary to this proposal's first draft: the report existed only as a log line, so `GET /v1/runs/latest` had nothing to read. It still binds no socket and the daily run keeps its own failure domain — the change is one table, one store, and one call at the end of a run.
 
 Delivered in two phases with a gate between them, because phase 1 is independently useful and answers the design question phase 2 depends on:
 
@@ -33,7 +33,10 @@ Delivered in two phases with a gate between them, because phase 1 is independent
 
 ### Modified Capabilities
 
-None. `demeter-service` is not modified: the insight service reads the same schema as a separate consumer.
+- `persistence`: adds the `run_report` table — one row per completed run, holding the counts, the per-reason suppression map, the alert audience (NULL for "could not tell", which is not zero), degraded sources and failures.
+- `orchestration`: adds `RunReportStore` and writes the report at the end of each run. A write failure is warned about, never raised: the run already happened, and losing the bookkeeping is a far smaller loss than failing a fetch that cannot be repeated.
+
+The first draft claimed no modification to `demeter-service`. That was wrong, and it was wrong in a way worth recording: task 1.4 (`GET /v1/runs/latest`) was listed first while the table it reads was deferred to 3.1. Flyers listed, observations and alerts are derivable from existing tables, but matches, items parsed/dropped, decode failure rate, elapsed time and — most importantly — the per-reason suppression breakdown exist nowhere but stdout. Deriving a partial report would have produced a view that looks complete while omitting the fields that make it worth having.
 
 ## Impact
 

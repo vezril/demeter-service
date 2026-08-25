@@ -135,6 +135,38 @@ object Schema {
             alerted_at    timestamptz NOT NULL,
             PRIMARY KEY (watch_id, product_key, window_from, window_to)
           )""",
+    // One row per completed daily run (08.3). Until now the report existed only
+    // as a log line, so "was yesterday's run healthy?" was answerable only by
+    // whoever still had the pod's stdout -- and a delivery that succeeded while
+    // being counted as a failure was invisible without cross-checking the
+    // broker by hand. Written at the end of a run, never updated.
+    sql"""CREATE TABLE IF NOT EXISTS run_report (
+            id                    bigserial PRIMARY KEY,
+            started_at            timestamptz NOT NULL,
+            finished_at           timestamptz NOT NULL,
+            elapsed_seconds       bigint,
+            flyers_listed         integer NOT NULL,
+            flyers_selected       integer NOT NULL,
+            flyers_fetched        integer NOT NULL,
+            flyers_failed         integer NOT NULL,
+            items_parsed          integer NOT NULL,
+            items_dropped         integer NOT NULL,
+            observations_inserted integer NOT NULL,
+            observations_skipped  integer NOT NULL,
+            matches               integer NOT NULL,
+            alerts_delivered      integer NOT NULL,
+            alerts_suppressed     integer NOT NULL,
+            -- reason -> count. The single most valuable column here: a bare
+            -- total cannot distinguish a price ceiling that is too tight from an
+            -- empty history from having already told you.
+            suppressed_by_reason  jsonb NOT NULL DEFAULT '{}'::jsonb,
+            -- NULL means "could not tell", which is not the same as zero.
+            alert_audience        integer,
+            degraded_sources      text[] NOT NULL DEFAULT '{}',
+            failures              text[] NOT NULL DEFAULT '{}',
+            partial               boolean NOT NULL DEFAULT false
+          )""",
+    sql"""CREATE INDEX IF NOT EXISTS run_report_finished_idx ON run_report (finished_at DESC)""",
     sql"""CREATE INDEX IF NOT EXISTS alert_ledger_window_idx ON alert_ledger (window_to)""",
     sql"""CREATE INDEX IF NOT EXISTS price_observation_history_idx
             ON price_observation (product_key, observed_at DESC)""",

@@ -93,7 +93,10 @@ lazy val orchestration = (project in file("modules/orchestration"))
   .settings(Compile / mainClass := Some("demeter.orchestration.Main"))
   // `sbt orchestration/stage` lays out bin/ + lib/ for the container image.
   .enablePlugins(JavaAppPackaging)
-  .settings(libraryDependencies ++= Seq(cats, catsEffect, pureconfig, log4cats, logback))
+  // doobie for the run-report store: RunReport is an 08 type that 03 cannot
+  // see, so the store lives here for the same reason the alert ledger lives in
+  // alerting and the watch store in watchlist.
+  .settings(libraryDependencies ++= Seq(cats, catsEffect, pureconfig, log4cats, logback) ++ doobie)
   .dependsOn(
     foundations,
     ingestion,

@@ -31,29 +31,45 @@ object Main extends IOApp {
 
         case Right(config) =>
           log.info(s"starting demeter-service\n${config.redactedDump}") *>
-            components(config).use { case (source, rawStore, observations, ledger, sink, watches, alertLedger) =>
-              for {
-                watchlist <- loadWatchlist(watches, log)
-                run <- DailyRun
-                  .create[IO](source, None, rawStore, observations, ledger, sink, alertLedger, config, watchlist)
-                _ <- IO.whenA(config.schedule.runOnStart)(executeOnce(run, log).void)
-                // validated at boot, so this cannot fail here
-                schedule = DailySchedule
-                  .parse(config.schedule.cron, config.schedule.zone)
-                  .getOrElse(throw new IllegalStateException("schedule passed validation but will not parse"))
-                _ <- loop(run, log, schedule)
-              } yield ExitCode.Success
+            components(config).use {
+              case (source, rawStore, observations, ledger, sink, watches, alertLedger, reports) =>
+                for {
+                  watchlist <- loadWatchlist(watches, log)
+                  run <- DailyRun
+                    .create[IO](source, None, rawStore, observations, ledger, sink, alertLedger, config, watchlist)
+                  _ <- IO.whenA(config.schedule.runOnStart)(executeOnce(run, log, reports).void)
+                  // validated at boot, so this cannot fail here
+                  schedule = DailySchedule
+                    .parse(config.schedule.cron, config.schedule.zone)
+                    .getOrElse(throw new IllegalStateException("schedule passed validation but will not parse"))
+                  _ <- loop(run, log, schedule, reports)
+                } yield ExitCode.Success
             }
       }
     }
 
-  private def executeOnce(run: DailyRun[IO], log: org.typelevel.log4cats.Logger[IO]): IO[RunReport] =
-    run.run.flatTap { report =>
-      val alarms = Observability.alarms(report, SourceName("flipp"))
-      log.info(Observability.prometheus(report)) *>
-        report.degraded.traverse_(d => log.warn(s"degraded: ${d.source.value} — ${d.reason}")) *>
-        alarms.traverse_(a => log.warn(s"DRIFT ALARM: ${a.message}"))
-    }
+  private def executeOnce(
+      run: DailyRun[IO],
+      log: org.typelevel.log4cats.Logger[IO],
+      reports: RunReportStore[IO],
+  ): IO[RunReport] =
+    for {
+      startedAt  <- IO.realTimeInstant
+      report     <- run.run
+      finishedAt <- IO.realTimeInstant
+      alarms = Observability.alarms(report, SourceName("flipp"))
+      _ <- log.info(Observability.prometheus(report))
+      _ <- report.degraded.traverse_(d => log.warn(s"degraded: ${d.source.value} — ${d.reason}"))
+      _ <- alarms.traverse_(a => log.warn(s"DRIFT ALARM: ${a.message}"))
+      // Persisted after logging, and a failure here is warned about rather than
+      // raised: the run already happened, and losing the bookkeeping is a far
+      // smaller loss than failing a fetch that cannot be repeated -- flyers
+      // expire, run reports do not.
+      _ <- reports.save(report, startedAt, finishedAt).flatMap {
+        case Right(_)    => IO.unit
+        case Left(error) => log.warn(s"run report not persisted: $error")
+      }
+    } yield report
 
   /** Sleeps until the next scheduled wall-clock firing, recomputed from the
     * clock each time. Accumulating a fixed interval instead would let a slow
@@ -64,6 +80,7 @@ object Main extends IOApp {
       run: DailyRun[IO],
       log: org.typelevel.log4cats.Logger[IO],
       schedule: DailySchedule,
+      reports: RunReportStore[IO],
   ): IO[Unit] =
     (for {
       now <- IO.realTimeInstant
@@ -71,7 +88,7 @@ object Main extends IOApp {
       wait = math.max(0L, next.toEpochMilli - now.toEpochMilli).millis
       _ <- log.info(s"next run at $next (in ${wait.toMinutes} min)")
       _ <- IO.sleep(wait)
-      _ <- executeOnce(run, log).attempt.flatMap {
+      _ <- executeOnce(run, log, reports).attempt.flatMap {
         // a failed run must not break the loop — tomorrow still gets a turn
         case Left(e)  => log.error(s"run failed: $e")
         case Right(_) => IO.unit
@@ -153,6 +170,7 @@ object Main extends IOApp {
         AlertSink[IO],
         WatchStore[IO],
         AlertLedger[IO],
+        RunReportStore[IO],
     ),
   ] =
     for {
@@ -173,6 +191,7 @@ object Main extends IOApp {
       sink,
       new DoobieWatchStore[IO](xa),
       new DoobieAlertLedger[IO](xa),
+      new DoobieRunReportStore[IO](xa),
     )
 
   private def transactor(config: Config): Resource[IO, Transactor[IO]] =
