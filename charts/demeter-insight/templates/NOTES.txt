@@ -1,0 +1,30 @@
+demeter-insight {{ .Chart.AppVersion }} is deployed as {{ include "insight.fullname" . }}.
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "insight.fullname" . }} 8080:{{ .Values.port }}
+  curl localhost:8080/v1/runs/latest
+{{ if .Values.ingress.enabled }}
+Or at http://{{ .Values.ingress.host }} — remembering that on a cluster whose
+Traefik is reached by NodePort, the URL carries that port.
+{{- end }}
+
+BEFORE THIS IS ACTUALLY READ-ONLY
+---------------------------------
+It connects as `{{ .Values.database.user }}`. That name alone guarantees
+nothing: if the role does not exist, or exists with write privileges, this
+service can damage the one dataset that cannot be rebuilt — flyers expire, so a
+deleted observation is gone for good.
+
+Create the role once per database, as a superuser:
+
+  psql -U demeter -d demeter \
+    -c "SET demeter.read_password = 'a-real-password'" \
+    -f charts/demeter-insight/role.sql
+
+Then confirm the guarantee rather than assuming it:
+
+  psql "postgresql://{{ .Values.database.user }}@HOST/demeter" \
+    -c "INSERT INTO run_report (started_at) VALUES (now())"
+  -- must fail with: permission denied for table run_report
+
+Having no write routes is a property of code someone can add to. The role is a
+property of the database they cannot change from inside this service.

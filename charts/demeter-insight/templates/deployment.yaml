@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "insight.fullname" . }}
+  labels: {{- include "insight.labels" . | nindent 4 }}
+spec:
+  # Safe to scale, unlike the daily job: this service only reads, so two of it
+  # cannot race each other or an upstream. Left at 1 because one is plenty.
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{- include "insight.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}{{- toYaml . | nindent 8 }}{{- end }}
+      labels: {{- include "insight.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: insight
+          image: {{ include "insight.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          env:
+            - name: DEMETER_JDBC_URL
+              value: {{ required "database.jdbcUrl is required -- there is deliberately no default, since a reader pointed at the wrong database returns plausible numbers about the wrong thing" .Values.database.jdbcUrl | quote }}
+            - name: DEMETER_DB_USER
+              value: {{ .Values.database.user | quote }}
+            - name: DEMETER_INSIGHT_PORT
+              value: {{ .Values.port | quote }}
+            - name: JAVA_OPTS
+              value: {{ .Values.javaOpts | quote }}
+          envFrom:
+            - secretRef:
+                name: {{ include "insight.fullname" . }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.port }}
+          # This service DOES bind a socket, so unlike the daily job a probe is
+          # meaningful here. It hits a real endpoint rather than a synthetic
+          # /healthz: a 503 from an unreachable database is exactly the state
+          # that should take the pod out of service, and a 404 (no runs yet) is
+          # a healthy answer.
+          readinessProbe:
+            httpGet:
+              path: /v1/runs/latest
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            # readOnlyRootFilesystem is on and the JVM still wants somewhere to
+            # write (temp files, hsperfdata).
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
