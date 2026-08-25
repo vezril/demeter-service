@@ -7,6 +7,9 @@ import io.circe.syntax._
 import org.http4s._
 import org.http4s.circe._
 import org.http4s.dsl.Http4sDsl
+import org.http4s.dsl.impl.OptionalQueryParamDecoderMatcher
+
+import demeter.foundations.ProductKey
 
 /** The read-only HTTP surface.
   *
@@ -15,7 +18,13 @@ import org.http4s.dsl.Http4sDsl
   * audit story, none of which is worth it to save an INSERT into a household
   * tool. The test suite asserts it.
   */
-final class Routes[F[_]: Concurrent](runs: RunQueries[F]) extends Http4sDsl[F] {
+final class Routes[F[_]: Concurrent](runs: RunQueries[F], history: HistoryQueries[F]) extends Http4sDsl[F] {
+
+  /** Window in days, defaulted to the 8 weeks the deal verdict itself uses so
+    * the chart and the alerts are talking about the same period. Clamped rather
+    * than rejected: a nonsense window is a typo, not an attack.
+    */
+  private object WindowDays extends OptionalQueryParamDecoderMatcher[Int]("days")
 
   val routes: HttpRoutes[F] = HttpRoutes.of[F] {
 
@@ -52,6 +61,20 @@ final class Routes[F[_]: Concurrent](runs: RunQueries[F]) extends Http4sDsl[F] {
         case true  => Ok(Map("status" -> "UP").asJson)
         case false => ServiceUnavailable(Map("status" -> "DOWN", "reason" -> "database unreachable").asJson)
       }
+
+    case GET -> Root / "v1" / "products" / productKey / "history" :? WindowDays(days) =>
+      val window = java.time.Duration.ofDays(days.map(d => math.max(1, math.min(365, d.toLong))).getOrElse(56L))
+      // ProductKey is a plain value class with no smart constructor, so the
+      // only thing worth rejecting is a blank segment.
+      if (productKey.trim.isEmpty) BadRequest(Map("error" -> "product key must not be blank").asJson)
+      else
+        history.forProduct(ProductKey(productKey), window).attempt.flatMap {
+          // An empty series is 200, not 404. "No observations for this product"
+          // is a data answer, and the alternative teaches a client that 404
+          // means both "unknown key" and "nothing recorded yet".
+          case Right(view) => Ok(view.asJson)
+          case Left(_)     => ServiceUnavailable(Map("error" -> "database unavailable").asJson)
+        }
 
     case GET -> Root / "v1" / "runs" / "latest" =>
       runs.latest.attempt.flatMap {

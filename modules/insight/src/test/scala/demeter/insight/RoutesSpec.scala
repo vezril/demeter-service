@@ -33,15 +33,25 @@ final class RoutesSpec extends AnyFunSuite {
     partial = false,
   )
 
-  private def app(queries: RunQueries[IO]) = new Routes[IO](queries).routes.orNotFound
+  private val emptyHistory: HistoryQueries[IO] = (key, window) =>
+    IO.pure(
+      HistoryView(key.value, window.toDays, Nil, StatsView(0, 0, None, None, None, None), None)
+    )
+
+  private def app(queries: RunQueries[IO], hist: HistoryQueries[IO] = emptyHistory) =
+    new Routes[IO](queries, hist).routes.orNotFound
 
   private def stub(result: IO[Option[RunView]], up: Boolean = true): RunQueries[IO] = new RunQueries[IO] {
     def latest: IO[Option[RunView]] = result
     def reachable: IO[Boolean]      = IO.pure(up)
   }
 
-  private def get(queries: RunQueries[IO], path: String = "/v1/runs/latest"): Response[IO] =
-    app(queries).run(Request[IO](Method.GET, Uri.unsafeFromString(path))).unsafeRunSync()
+  private def get(
+      queries: RunQueries[IO],
+      path: String = "/v1/runs/latest",
+      hist: HistoryQueries[IO] = emptyHistory,
+  ): Response[IO] =
+    app(queries, hist).run(Request[IO](Method.GET, Uri.unsafeFromString(path))).unsafeRunSync()
 
   private def bodyJson(r: Response[IO]): Json =
     parse(r.bodyText.compile.string.unsafeRunSync()).getOrElse(Json.Null)
@@ -133,6 +143,40 @@ final class RoutesSpec extends AnyFunSuite {
   test("health is 503 when the database does not answer") {
     val response = get(stub(IO.pure(None), up = false), "/health")
     assert(response.status == Status.ServiceUnavailable)
+  }
+
+  // --- product history ---
+
+  test("a product with no observations is 200 with an empty series, not 404") {
+    // "No observations for this product" is a data answer. Returning 404 would
+    // teach a client that it means both "unknown key" and "nothing yet".
+    val response = get(stub(IO.pure(None)), "/v1/products/iga%7Cmilk-4l/history")
+    assert(response.status == Status.Ok)
+    assert(bodyJson(response).hcursor.downField("points").values.exists(_.isEmpty))
+  }
+
+  test("the window defaults to the 8 weeks the verdict itself uses") {
+    // So the chart and the alerts are describing the same period.
+    val days = bodyJson(get(stub(IO.pure(None)), "/v1/products/k/history")).hcursor.get[Long]("windowDays")
+    assert(days.contains(56L))
+  }
+
+  test("an explicit window is honoured") {
+    val days = bodyJson(get(stub(IO.pure(None)), "/v1/products/k/history?days=14")).hcursor.get[Long]("windowDays")
+    assert(days.contains(14L))
+  }
+
+  test("a nonsense window is clamped, not rejected") {
+    // A bad number here is a typo, not an attack.
+    val huge = bodyJson(get(stub(IO.pure(None)), "/v1/products/k/history?days=99999")).hcursor.get[Long]("windowDays")
+    assert(huge.contains(365L))
+    val zero = bodyJson(get(stub(IO.pure(None)), "/v1/products/k/history?days=0")).hcursor.get[Long]("windowDays")
+    assert(zero.contains(1L))
+  }
+
+  test("a database outage on history is 503, never an empty series") {
+    val failing: HistoryQueries[IO] = (_, _) => IO.raiseError(new java.sql.SQLException("refused"))
+    assert(get(stub(IO.pure(None)), "/v1/products/k/history", failing).status == Status.ServiceUnavailable)
   }
 
   test("every route is a GET") {
