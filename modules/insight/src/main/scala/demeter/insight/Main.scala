@@ -25,7 +25,11 @@ object Main extends IOApp {
         case Right(config) =>
           log.info(s"starting demeter-insight\n${config.redactedDump}") *>
             transactor(config).use { xa =>
-              val routes = new Routes[IO](new DoobieRunQueries[IO](xa), new DbHistoryQueries[IO](xa)).routes
+              val routes = new Routes[IO](
+                new DoobieRunQueries[IO](xa),
+                new DbHistoryQueries[IO](xa),
+                new DbWatchQueries[IO](xa),
+              ).routes
               EmberServerBuilder
                 .default[IO]
                 .withHost(host"0.0.0.0")

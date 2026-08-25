@@ -18,7 +18,13 @@ import demeter.foundations.ProductKey
   * audit story, none of which is worth it to save an INSERT into a household
   * tool. The test suite asserts it.
   */
-final class Routes[F[_]: Concurrent](runs: RunQueries[F], history: HistoryQueries[F]) extends Http4sDsl[F] {
+final class Routes[F[_]: Concurrent](
+    runs: RunQueries[F],
+    history: HistoryQueries[F],
+    watches: WatchQueries[F],
+) extends Http4sDsl[F] {
+
+  private object Limit extends OptionalQueryParamDecoderMatcher[Int]("limit")
 
   /** Window in days, defaulted to the 8 weeks the deal verdict itself uses so
     * the chart and the alerts are talking about the same period. Clamped rather
@@ -75,6 +81,19 @@ final class Routes[F[_]: Concurrent](runs: RunQueries[F], history: HistoryQuerie
           case Right(view) => Ok(view.asJson)
           case Left(_)     => ServiceUnavailable(Map("error" -> "database unavailable").asJson)
         }
+
+    case GET -> Root / "v1" / "watches" =>
+      watches.watches.attempt.flatMap {
+        case Right(list) => Ok(list.asJson)
+        case Left(_)     => ServiceUnavailable(Map("error" -> "database unavailable").asJson)
+      }
+
+    case GET -> Root / "v1" / "alerts" :? Limit(limit) =>
+      val capped = limit.map(l => math.max(1, math.min(500, l))).getOrElse(50)
+      watches.alerts(capped).attempt.flatMap {
+        case Right(list) => Ok(list.asJson)
+        case Left(_)     => ServiceUnavailable(Map("error" -> "database unavailable").asJson)
+      }
 
     case GET -> Root / "v1" / "runs" / "latest" =>
       runs.latest.attempt.flatMap {

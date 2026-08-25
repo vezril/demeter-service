@@ -16,7 +16,8 @@ would not.
 - [x] 1.3 Query layer owned by this module (not importing demeter's stores wholesale), so a schema change breaks one file loudly at compile time
 - [x] 1.4 `GET /v1/runs/latest` — the first endpoint, chosen because it replaces the `kubectl logs` habit immediately
 - [x] 1.5 `GET /v1/products/{productKey}/history` — series with per-point confidence, statistics from `PriceStats.rollingStats`, verdict from `DealVerdict`; test pins that the API's numbers equal the library's
-- [ ] 1.6 `GET /v1/watches` and `GET /v1/alerts`
+- [x] 1.6 `GET /v1/watches` and `GET /v1/alerts`. PARTIAL against the spec: per-watch match and suppression counts are NOT served, because they are not stored — `run_report` records suppression by reason across the whole run, not per watch. Watches carry their definitions and what they actually alerted; alerts resolve a merchant by join (ProductKey is merchant-scoped, verified: 0 keys map to >1 merchant across 18,678 products)
+- [ ] 1.6b Per-watch match/suppression counts — needs demeter to record them, i.e. a second schema change of the same shape as the run report. Without it the "watch health" view can show what a watch alerted but not why it stayed silent, which is the question it exists to answer
 - [x] 1.7 `GET /health`: 200 when the database answers, 503 when it does not. Brought forward from its place in the list because the readiness probe needed it — probing the data endpoint made a working service unready until its first run
 - [x] 1.8 `charts/demeter-insight`: Deployment/Service/Secret/Ingress, ingress class omitted when empty, readiness probe on a real endpoint rather than a synthetic one. Image built from the same Dockerfile via `--build-arg MODULE=insight`, published as the `-insight` tag variant; CI lints the chart and starts the image
 - [ ] 1.9 **Gate**: run against the live NAS database for at least one full daily cycle; confirm the run report matches the logged exposition exactly
