@@ -59,6 +59,14 @@ final class PriceTextParserSpec extends AnyFunSuite with ScalaCheckPropertyCheck
   test("an unresolvable separator pattern is refused rather than guessed at") {
     assert(parse("$1,23,45").isEmpty) // repeated commas: neither grouping nor decimal
     assert(parse("$1,2345").isEmpty)  // four digits after a comma is neither
+
+    // Interleaved separators, where the FIRST and the LAST mark of a kind
+    // disagree about which one is the decimal. Only the last may decide. Read
+    // the first instead and both of these resolve to a perfectly plausible
+    // $12.34 -- a wrong price that looks entirely reasonable, which is the
+    // worst failure this parser has, since nothing downstream would flag it.
+    assert(parse("$1.2,3.4").isEmpty)
+    assert(parse("$1,2.3,4").isEmpty)
   }
 
   test("a bare number with no currency signal is a size, not a price") {
