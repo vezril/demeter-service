@@ -16,15 +16,30 @@ import org.http4s.dsl.Http4sDsl
   */
 final class Routes[F[_]: Concurrent](runs: RunQueries[F]) extends Http4sDsl[F] {
 
-  val routes: HttpRoutes[F] = HttpRoutes.of[F] { case GET -> Root / "v1" / "runs" / "latest" =>
-    runs.latest.attempt.flatMap {
-      // No runs yet is 404 rather than an empty body: a client must be able to
-      // tell "nothing has run" from "a run happened and had no alerts".
-      case Right(Some(view)) => Ok(view.asJson)
-      case Right(None)       => NotFound(Map("error" -> "no runs recorded yet").asJson)
-      // The database being unreachable is 503, never an empty result. An
-      // outage that renders as "no data" is how a broken view looks healthy.
-      case Left(_) => ServiceUnavailable(Map("error" -> "database unavailable").asJson)
-    }
+  val routes: HttpRoutes[F] = HttpRoutes.of[F] {
+
+    // Readiness, and deliberately NOT /v1/runs/latest.
+    //
+    // Probing the data endpoint conflates "can serve" with "has data": before
+    // the first daily run it answers 404, a pod probing it never becomes Ready,
+    // and a service that is working perfectly is held out of rotation until
+    // tomorrow morning. This asks the only question a probe should ask: is the
+    // database answering?
+    case GET -> Root / "health" =>
+      runs.reachable.flatMap {
+        case true  => Ok(Map("status" -> "UP").asJson)
+        case false => ServiceUnavailable(Map("status" -> "DOWN", "reason" -> "database unreachable").asJson)
+      }
+
+    case GET -> Root / "v1" / "runs" / "latest" =>
+      runs.latest.attempt.flatMap {
+        // No runs yet is 404 rather than an empty body: a client must be able to
+        // tell "nothing has run" from "a run happened and had no alerts".
+        case Right(Some(view)) => Ok(view.asJson)
+        case Right(None)       => NotFound(Map("error" -> "no runs recorded yet").asJson)
+        // The database being unreachable is 503, never an empty result. An
+        // outage that renders as "no data" is how a broken view looks healthy.
+        case Left(_) => ServiceUnavailable(Map("error" -> "database unavailable").asJson)
+      }
   }
 }
