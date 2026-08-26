@@ -33,8 +33,8 @@ Phase 1 is independently useful and answers a question the UI currently admits i
 
 ## 3. The device half
 
-- [ ] 3.1 **Join the iPhone to the tailnet.** Not this feature's work, but this feature does not reach a phone without it — the tailnet is currently this Mac and `mimir`. Until then the export runs only on the Mac, and planning a trip at a desk is most of the convenience gone.
-- [ ] 3.2 A Shortcut that fetches the chosen list and creates the reminders on-device.
+- [ ] 3.1 **Make the UI resolvable from the phone.** Corrected 2026-08-26: the obstacle is not tailnet membership, it is DNS. `demeter.tailscale` exists only as an `/etc/hosts` entry on the Mac — `nslookup` returns NXDOMAIN — and iOS has no user-editable hosts file, so the name cannot resolve on a phone no matter what. This affects all eight `*.tailscale` UIs on this tailnet, not just demeter, so it is worth fixing once at the DNS layer (tailnet-wide records) rather than per app. Not blocking 3.2 — see the header override below.
+- [ ] 3.2 A Shortcut that fetches the chosen list and creates the reminders on-device. It can work **before** 3.1 is fixed: Shortcuts can set request headers, so `http://100.107.133.54:61642/` with `Host: demeter.tailscale` reaches Traefik today (verified 2026-08-26, returns 200). Safari cannot do this, so browsing the UI from the phone still needs 3.1.
 - [ ] 3.3 One Reminders list per store, of the Groceries type, so iOS sorts by department inside it (D2).
 - [ ] 3.4 Treat the payload as a public contract: boring, additive, versioned in spirit. The Shortcut lives outside the repo, cannot be migrated, and drifts silently (R3).
 - [ ] 3.5 Verify end to end on a real phone in a real shop. The aisle is where a checklist that reads badly becomes obvious, and no amount of looking at it in a browser substitutes.
