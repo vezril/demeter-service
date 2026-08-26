@@ -23,6 +23,7 @@ object Main extends IOApp {
         case Left(errors) =>
           errors.traverse_(e => log.error(s"config error: $e")).as(ExitCode.Error)
         case Right(config) =>
+          implicit val logger: org.typelevel.log4cats.Logger[IO] = log
           log.info(s"starting demeter-insight\n${config.redactedDump}") *>
             transactor(config).use { xa =>
               // A SECOND transactor for writes, as a different role. The read

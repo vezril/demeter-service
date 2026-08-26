@@ -11,12 +11,12 @@ import org.http4s.dsl.impl.OptionalQueryParamDecoderMatcher
 
 import demeter.foundations.ProductKey
 
-/** The read-only HTTP surface.
+/** The HTTP surface.
   *
-  * Every route is a GET, and that is a design constraint rather than a current
-  * state of affairs: a write path would drag in authentication, CSRF and an
-  * audit story, none of which is worth it to save an INSERT into a household
-  * tool. The test suite asserts it.
+  * Every READ route is a GET and stays one; the test suite asserts it. The
+  * watch-editing routes are the deliberate exception, and they exist only when
+  * `writes` is configured -- see the comment above them for why that reversal
+  * is narrow enough to be safe.
   */
 final class Routes[F[_]: Concurrent](
     runs: RunQueries[F],
@@ -104,9 +104,13 @@ final class Routes[F[_]: Concurrent](
           writes.get.save(request).attempt.flatMap {
             case Right(Right(_)) => Created(Map("id" -> request.id).asJson)
             // A domain rejection is 422, not 400: the JSON was fine, the WATCH
-            // was not, and the message says which rule it broke.
-            case Right(Left(reason)) => UnprocessableEntity(Map("error" -> reason).asJson)
-            case Left(_)             => ServiceUnavailable(Map("error" -> "database unavailable").asJson)
+            // was not, and the message says which rule it broke. A store failure
+            // is 503 -- telling someone their watch is invalid when the database
+            // is down sends them editing a form that was never wrong.
+            case Right(Left(WriteFailure.Invalid(reason))) =>
+              UnprocessableEntity(Map("error" -> reason).asJson)
+            case Right(Left(WriteFailure.Unavailable(_))) | Left(_) =>
+              ServiceUnavailable(Map("error" -> "database unavailable").asJson)
           }
       }
 
@@ -114,16 +118,20 @@ final class Routes[F[_]: Concurrent](
       writes.get.setActive(id, active.getOrElse(true)).attempt.flatMap {
         case Right(Right(true))  => NoContent()
         case Right(Right(false)) => NotFound(Map("error" -> s"no watch '$id'").asJson)
-        case Right(Left(reason)) => UnprocessableEntity(Map("error" -> reason).asJson)
-        case Left(_)             => ServiceUnavailable(Map("error" -> "database unavailable").asJson)
+        case Right(Left(WriteFailure.Invalid(reason))) =>
+          UnprocessableEntity(Map("error" -> reason).asJson)
+        case Right(Left(WriteFailure.Unavailable(_))) | Left(_) =>
+          ServiceUnavailable(Map("error" -> "database unavailable").asJson)
       }
 
     case DELETE -> Root / "v1" / "watches" / id if writes.isDefined =>
       writes.get.delete(id).attempt.flatMap {
         case Right(Right(true))  => NoContent()
         case Right(Right(false)) => NotFound(Map("error" -> s"no watch '$id'").asJson)
-        case Right(Left(reason)) => UnprocessableEntity(Map("error" -> reason).asJson)
-        case Left(_)             => ServiceUnavailable(Map("error" -> "database unavailable").asJson)
+        case Right(Left(WriteFailure.Invalid(reason))) =>
+          UnprocessableEntity(Map("error" -> reason).asJson)
+        case Right(Left(WriteFailure.Unavailable(_))) | Left(_) =>
+          ServiceUnavailable(Map("error" -> "database unavailable").asJson)
       }
 
     case GET -> Root / "v1" / "watches" =>

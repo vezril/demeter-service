@@ -271,14 +271,14 @@ final class RoutesSpec extends AnyFunSuite {
   /** Named rather than anonymous: an inline class with an extra field infers a
     * structural type, which -Xsource:3 rejects.
     */
-  private final class RecordingWrites(result: Either[String, Unit] = Right(())) extends WatchWrites[IO] {
-    var saved: Option[WatchRequest]                                    = None
-    def save(r: WatchRequest): IO[Either[String, Unit]]                = { saved = Some(r); IO.pure(result) }
-    def setActive(id: String, a: Boolean): IO[Either[String, Boolean]] = IO.pure(Right(true))
-    def delete(id: String): IO[Either[String, Boolean]]                = IO.pure(Right(true))
+  private final class RecordingWrites(result: Either[WriteFailure, Unit] = Right(())) extends WatchWrites[IO] {
+    var saved: Option[WatchRequest]                                          = None
+    def save(r: WatchRequest): IO[Either[WriteFailure, Unit]]                = { saved = Some(r); IO.pure(result) }
+    def setActive(id: String, a: Boolean): IO[Either[WriteFailure, Boolean]] = IO.pure(Right(true))
+    def delete(id: String): IO[Either[WriteFailure, Boolean]]                = IO.pure(Right(true))
   }
 
-  private def recordingWrites(result: Either[String, Unit] = Right(())): RecordingWrites =
+  private def recordingWrites(result: Either[WriteFailure, Unit] = Right(())): RecordingWrites =
     new RecordingWrites(result)
 
   test("with writes disabled the service is exactly as read-only as before") {
@@ -325,7 +325,7 @@ final class RoutesSpec extends AnyFunSuite {
   test("a watch the DOMAIN rejects is 422, and says which rule it broke") {
     // 422 not 400: the JSON parsed fine, the watch is the problem. Accepting it
     // would produce a watch the daily run silently drops at load.
-    val w    = recordingWrites(Left("a watch needs at least one term to match on"))
+    val w    = recordingWrites(Left(WriteFailure.Invalid("a watch needs at least one term to match on")))
     val body = Json.obj("id" -> "x".asJson, "label" -> "X".asJson, "terms" -> List.empty[String].asJson)
     val r = app(stub(IO.pure(None)), writes = Some(w))
       .run(Request[IO](Method.POST, uri"/v1/watches").withEntity(body))
@@ -344,13 +344,54 @@ final class RoutesSpec extends AnyFunSuite {
 
   test("deleting a watch that is not there is 404, not silent success") {
     val w = new WatchWrites[IO] {
-      def save(r: WatchRequest): IO[Either[String, Unit]]                = IO.pure(Right(()))
-      def setActive(id: String, a: Boolean): IO[Either[String, Boolean]] = IO.pure(Right(false))
-      def delete(id: String): IO[Either[String, Boolean]]                = IO.pure(Right(false))
+      def save(r: WatchRequest): IO[Either[WriteFailure, Unit]]                = IO.pure(Right(()))
+      def setActive(id: String, a: Boolean): IO[Either[WriteFailure, Boolean]] = IO.pure(Right(false))
+      def delete(id: String): IO[Either[WriteFailure, Boolean]]                = IO.pure(Right(false))
     }
     val del = app(stub(IO.pure(None)), writes = Some(w))
       .run(Request[IO](Method.DELETE, uri"/v1/watches/ghost"))
       .unsafeRunSync()
     assert(del.status == Status.NotFound)
+  }
+
+  test("a store failure is 503 on every write route, never 422") {
+    // Found by hand-testing against a Postgres the write role could not
+    // authenticate to: the outage came back as 422 "invalid watch". That sends
+    // someone editing a form that was never wrong, and hides an outage as user
+    // error. The two failures have different audiences and different fixes.
+    val down = new WatchWrites[IO] {
+      private val boom = Left(WriteFailure.Unavailable("password authentication failed"))
+      def save(r: WatchRequest): IO[Either[WriteFailure, Unit]]                = IO.pure(boom)
+      def setActive(id: String, a: Boolean): IO[Either[WriteFailure, Boolean]] = IO.pure(boom)
+      def delete(id: String): IO[Either[WriteFailure, Boolean]]                = IO.pure(boom)
+    }
+    val valid = Json.obj("id" -> "x".asJson, "label" -> "X".asJson, "terms" -> List("milk").asJson)
+    val calls = List(
+      Request[IO](Method.POST, uri"/v1/watches").withEntity(valid),
+      Request[IO](Method.PATCH, uri"/v1/watches/x/active?active=false"),
+      Request[IO](Method.DELETE, uri"/v1/watches/x"),
+    )
+    for (call <- calls) {
+      val r = app(stub(IO.pure(None)), writes = Some(down)).run(call).unsafeRunSync()
+      assert(r.status == Status.ServiceUnavailable, s"${call.method} ${call.uri} must be 503, got ${r.status}")
+    }
+  }
+
+  test("a store failure does not leak the connection string to the browser") {
+    // The message that surfaced the bug carried the role name and the failure
+    // mode. That belongs in the logs, not in a response anyone on the tailnet
+    // can read.
+    val down = new WatchWrites[IO] {
+      private val boom =
+        Left(WriteFailure.Unavailable("""FATAL: password authentication failed for user "demeter_watch""""))
+      def save(r: WatchRequest): IO[Either[WriteFailure, Unit]]                = IO.pure(boom)
+      def setActive(id: String, a: Boolean): IO[Either[WriteFailure, Boolean]] = IO.pure(boom)
+      def delete(id: String): IO[Either[WriteFailure, Boolean]]                = IO.pure(boom)
+    }
+    val valid = Json.obj("id" -> "x".asJson, "label" -> "X".asJson, "terms" -> List("milk").asJson)
+    val r = app(stub(IO.pure(None)), writes = Some(down))
+      .run(Request[IO](Method.POST, uri"/v1/watches").withEntity(valid))
+      .unsafeRunSync()
+    assert(!bodyJson(r).noSpaces.contains("demeter_watch"))
   }
 }
