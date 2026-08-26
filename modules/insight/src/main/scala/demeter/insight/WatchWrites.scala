@@ -3,6 +3,7 @@ package demeter.insight
 import cats.effect.kernel.MonadCancelThrow
 import cats.syntax.all._
 import doobie.Transactor
+import org.typelevel.log4cats.Logger
 import io.circe.Decoder
 import io.circe.generic.semiauto.deriveDecoder
 
@@ -29,6 +30,27 @@ object WatchRequest {
   implicit val decoder: Decoder[WatchRequest] = deriveDecoder
 }
 
+/** Why a write did not happen.
+  *
+  * The two cases want different answers and different fixes. `Invalid` is the
+  * person's problem and is actionable — a term that is also an exclusion, a
+  * discount out of range. `Unavailable` is the deployment's problem and tells
+  * them nothing about their watch. Collapsing both into one string reported a
+  * database outage as "your watch is invalid", which sends someone editing a
+  * form that was never wrong.
+  */
+sealed abstract class WriteFailure extends Product with Serializable
+object WriteFailure {
+  final case class Invalid(reason: String)     extends WriteFailure
+  final case class Unavailable(reason: String) extends WriteFailure
+}
+
+trait WatchWrites[F[_]] {
+  def save(request: WatchRequest): F[Either[WriteFailure, Unit]]
+  def setActive(id: String, isActive: Boolean): F[Either[WriteFailure, Boolean]]
+  def delete(id: String): F[Either[WriteFailure, Boolean]]
+}
+
 /** Writes to `watch_item`, and nothing else.
   *
   * The connection this uses belongs to `demeter_watch`, a role granted INSERT,
@@ -36,17 +58,11 @@ object WatchRequest {
   * the raw archive, the alert ledger -- stays unwritable, because those cannot
   * be re-entered and a watchlist can.
   */
-trait WatchWrites[F[_]] {
-  def save(request: WatchRequest): F[Either[String, Unit]]
-  def setActive(id: String, isActive: Boolean): F[Either[String, Boolean]]
-  def delete(id: String): F[Either[String, Boolean]]
-}
-
-final class DbWatchWrites[F[_]: MonadCancelThrow](xa: Transactor[F]) extends WatchWrites[F] {
+final class DbWatchWrites[F[_]: MonadCancelThrow: Logger](xa: Transactor[F]) extends WatchWrites[F] {
 
   private val store = new DoobieWatchStore[F](xa)
 
-  def save(request: WatchRequest): F[Either[String, Unit]] =
+  def save(request: WatchRequest): F[Either[WriteFailure, Unit]] =
     // Validated by the domain, not here. A watch this module accepted but
     // WatchItem.of would reject is a watch the daily run silently drops.
     WatchItem.of(
@@ -60,17 +76,18 @@ final class DbWatchWrites[F[_]: MonadCancelThrow](xa: Transactor[F]) extends Wat
       minDiscountPct = request.minDiscountPct,
       active = request.active.getOrElse(true),
     ) match {
-      case Left(invalid) => MonadCancelThrow[F].pure(Left(explain(invalid)))
+      case Left(invalid) => MonadCancelThrow[F].pure(Left(WriteFailure.Invalid(explain(invalid))))
       case Right(watch) =>
-        if (watch.id.value.isEmpty) MonadCancelThrow[F].pure(Left("id must not be blank"))
-        else store.upsert(watch).map(_.left.map(describe))
+        if (watch.id.value.isEmpty)
+          MonadCancelThrow[F].pure(Left(WriteFailure.Invalid("id must not be blank")))
+        else reporting(store.upsert(watch))
     }
 
-  def setActive(id: String, isActive: Boolean): F[Either[String, Boolean]] =
-    store.setActive(WatchId(id), isActive).map(_.left.map(describe))
+  def setActive(id: String, isActive: Boolean): F[Either[WriteFailure, Boolean]] =
+    reporting(store.setActive(WatchId(id), isActive))
 
-  def delete(id: String): F[Either[String, Boolean]] =
-    store.delete(WatchId(id)).map(_.left.map(describe))
+  def delete(id: String): F[Either[WriteFailure, Boolean]] =
+    reporting(store.delete(WatchId(id)))
 
   /** The domain's rejections, in words a person editing a form can act on. */
   private def explain(invalid: WatchItem.InvalidWatch): String = invalid match {
@@ -82,5 +99,20 @@ final class DbWatchWrites[F[_]: MonadCancelThrow](xa: Transactor[F]) extends Wat
       s"'$term' is both a term and an exclusion, so this watch could never match anything"
   }
 
-  private def describe(error: DealWatchError): String = error.toString
+  /** Anything the STORE returns is an infrastructure failure -- the watch was
+    * already validated by the time it got here -- so it is logged and reported
+    * as unavailable.
+    *
+    * The logging is the point of the flatMap. The response deliberately says
+    * only "database unavailable", because the real message names the role and
+    * the failure mode and anyone on the tailnet can read it. If it were not
+    * written down here it would not be written down anywhere, and an outage
+    * would leave no trace but a 503.
+    */
+  private def reporting[A](result: F[Either[DealWatchError, A]]): F[Either[WriteFailure, A]] =
+    result.flatMap {
+      case Right(a) => MonadCancelThrow[F].pure(Right(a))
+      case Left(error) =>
+        Logger[F].error(s"watch write failed: $error").as(Left(WriteFailure.Unavailable(error.toString)))
+    }
 }
