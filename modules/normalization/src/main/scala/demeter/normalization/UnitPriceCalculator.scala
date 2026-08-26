@@ -36,11 +36,16 @@ object UnitPriceCalculator {
 
   /** All size tokens found, ordered by position; the first wins. */
   private def sizeCandidates(name: String): List[(Int, Size)] = {
-    val multipacks = Multipack.findAllMatchIn(name).toList.map { m =>
-      val pack  = m.group(1).toInt
-      val each  = decimal(m.group(2))
-      val total = each * pack
-      m.start -> toSize(total, m.group(3), pack)
+    // `.toInt` throws on anything that does not fit, and flyer text is not
+    // obliged to be sensible -- "99999999999 x 500 ml" threw NumberFormatException
+    // out of a pure parser. Same shape as the zero size: an unusable number is
+    // not a size, so the candidate is skipped rather than raised.
+    val multipacks = Multipack.findAllMatchIn(name).toList.flatMap { m =>
+      m.group(1).toIntOption.map { pack =>
+        val each  = decimal(m.group(2))
+        val total = each * pack
+        m.start -> toSize(total, m.group(3), pack)
+      }
     }
     // exclude volume/weight matches that are part of a multipack expression
     def free(m: scala.util.matching.Regex.Match): Boolean =
@@ -50,13 +55,29 @@ object UnitPriceCalculator {
       Volume.findAllMatchIn(name).toList.filter(free).map(m => m.start -> toSize(decimal(m.group(1)), m.group(2), 1))
     val weights =
       Weight.findAllMatchIn(name).toList.filter(free).map(m => m.start -> toSize(decimal(m.group(1)), m.group(2), 1))
-    val counts = Count.findAllMatchIn(name).toList.map { m =>
-      val n = List(1, 2, 3, 4).flatMap(i => Option(m.group(i))).head.toInt
-      m.start -> Size(BigDecimal(n), StdUnit.PerItem, n)
+    val counts = Count.findAllMatchIn(name).toList.flatMap { m =>
+      List(1, 2, 3, 4).flatMap(i => Option(m.group(i))).head.toIntOption.map { n =>
+        m.start -> Size(BigDecimal(n), StdUnit.PerItem, n)
+      }
     }
     val dozens = Dozen.findAllMatchIn(name).toList.map(m => m.start -> Size(BigDecimal(12), StdUnit.PerItem, 12))
 
-    (multipacks ++ volumes ++ weights ++ counts ++ dozens).sortBy(_._1)
+    // Drop sizes that normalize to zero before they leave here.
+    //
+    // `round3` takes ml and g down by 1000, so anything under half a gram or
+    // half a millilitre -- and any literal 0 in the flyer text -- lands on
+    // 0.000. That reached `unitPrice`, whose `require` threw, and the throw was
+    // caught at the FLYER level: on 2026-08-26 three of eighteen selected
+    // flyers were lost whole, about 410 observations, to one bad item each.
+    // Nothing in the run report showed it -- items.dropped was 0,
+    // decodeFailureRate 0.0, partial false -- because the items never got as
+    // far as being parsed, let alone dropped.
+    //
+    // A zero size is not a size. Discarding the candidate leaves `size` and
+    // `unitPrice` as None, which the observation already models as ordinary
+    // ("Returns None when no size is parseable -- common, not an error"), and
+    // the item keeps the name and price that make it worth storing.
+    (multipacks ++ volumes ++ weights ++ counts ++ dozens).filter(_._2.quantity > 0).sortBy(_._1)
   }
 
   private def decimal(s: String): BigDecimal = BigDecimal(s.replace(',', '.'))

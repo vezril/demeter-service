@@ -10,7 +10,7 @@ import doobie.postgres.implicits._
 import io.circe.syntax._
 import io.circe.parser.parse
 
-import demeter.foundations.DealWatchError
+import demeter.foundations.{DealWatchError, SourceName}
 
 /** Spec 08.3 — the run report, made durable.
   *
@@ -73,7 +73,7 @@ final class DoobieRunReportStore[F[_]: MonadCancelThrow](xa: Transactor[F]) exte
                  items_parsed, items_dropped,
                  observations_inserted, observations_skipped,
                  matches, alerts_delivered, alerts_suppressed,
-                 suppressed_by_reason::text, alert_audience, partial
+                 suppressed_by_reason::text, alert_audience, degraded_sources
             FROM run_report
            ORDER BY finished_at DESC
            LIMIT 1"""
@@ -96,7 +96,7 @@ final class DoobieRunReportStore[F[_]: MonadCancelThrow](xa: Transactor[F]) exte
             Int,
             String,
             Option[Int],
-            Boolean,
+            List[String],
         )
       ]
       .option
@@ -120,7 +120,7 @@ final class DoobieRunReportStore[F[_]: MonadCancelThrow](xa: Transactor[F]) exte
               asup,
               reasons,
               audience,
-              partial,
+              degradedSources,
             ) =>
           PersistedRun(
             id = id,
@@ -141,10 +141,20 @@ final class DoobieRunReportStore[F[_]: MonadCancelThrow](xa: Transactor[F]) exte
               suppressedByReason =
                 parse(reasons).toOption.flatMap(_.as[Map[String, Int]].toOption).getOrElse(Map.empty),
               alertAudience = audience,
-              elapsed = elapsed.map(scala.concurrent.duration.Duration(_, "seconds")).collect {
-                case f: scala.concurrent.duration.FiniteDuration => f
-              },
-              partial = partial,
+              elapsed = elapsed
+                .map(scala.concurrent.duration.Duration(_, "seconds"))
+                .collect { case f: scala.concurrent.duration.FiniteDuration =>
+                  f
+                },
+              // `partial` is derived, so it is rebuilt from its inputs rather
+              // than read from the column. The column is still written on save,
+              // for anything reading the table with SQL -- demeter-insight does
+              // exactly that.
+              //
+              // The cause of each degradation is not stored, only which source
+              // degraded, so it is named as unavailable rather than invented.
+              degraded = degradedSources
+                .map(n => DegradedSource(SourceName(n), DealWatchError.Decode(n, "run_report", "cause not persisted"))),
             ),
           )
       })

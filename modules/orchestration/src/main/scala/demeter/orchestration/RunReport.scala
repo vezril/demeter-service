@@ -38,8 +38,20 @@ final case class RunReport(
     degraded: List[DegradedSource] = Nil,
     failures: List[DealWatchError] = Nil,
     elapsed: Option[FiniteDuration] = None,
-    partial: Boolean = false,
 ) {
+
+  /** Whether this run failed to see everything it should have.
+    *
+    * DERIVED, not a flag someone has to remember to set. It was a stored
+    * Boolean set at exactly one site -- the listing degrading -- so a run that
+    * lost three whole flyers to a bad item reported `partial: false` while
+    * roughly 17% of the day's observations were missing. A flag that has to be
+    * maintained in step with every new way a run can come up short will drift
+    * out of step with them, and the failure is silent in the direction that
+    * matters: it claims completeness.
+    */
+  def partial: Boolean = degraded.nonEmpty || flyersFailed > 0
+
   def decodeFailureRate: Double =
     if (itemsParsed + itemsDropped == 0) 0.0 else itemsDropped.toDouble / (itemsParsed + itemsDropped)
 
