@@ -8,6 +8,7 @@ import cats.effect.IO
 import cats.effect.kernel.Ref
 import cats.effect.unsafe.implicits.global
 import demeter.foundations._
+import demeter.normalization.ObservationAssembler
 import demeter.ingestion._
 import demeter.persistence.RawResponseId
 import demeter.alerting.{AlertKey, AlertLedger, AlertRecord}
@@ -88,6 +89,12 @@ final class DailyRunSpec extends AnyFunSuite {
       IO.pure(Left(DealWatchError.Unsupported(name.value, "Search")))
   }
 
+  /** An assembler that throws for one chosen raw name and is otherwise real. */
+  private def throwingOn(rawName: String): (FlyerItem, Instant, Locale) => PriceObservation =
+    (i, at, l) =>
+      if (i.rawName == rawName) throw new IllegalArgumentException(s"cannot assemble '$rawName'")
+      else ObservationAssembler.assemble(i, at, l)
+
   private def runWith(
       source: FlyerSource[IO],
       sink: MemSink = MemSink.create(),
@@ -98,9 +105,26 @@ final class DailyRunSpec extends AnyFunSuite {
       cfg: Config = config,
       watchlist: List[WatchItem] = List(milkWatch),
       alertLedger: MemAlertLedger = MemAlertLedger.create(),
+      /** Defaults to the real assembler; the containment tests inject one that
+        * throws for a chosen item, so they do not depend on whichever input
+        * happens to be broken today.
+        */
+      assembleItem: (FlyerItem, Instant, Locale) => PriceObservation = (i: FlyerItem, at: Instant, l: Locale) =>
+        ObservationAssembler.assemble(i, at, l),
   ): (RunReport, MemSink, MemObservationStore, MemRawStore, MemLedger) = {
     val run = DailyRun
-      .create[IO](source, fallback, rawStore, obsStore, ledger, sink, alertLedger, cfg, IO.pure(watchlist))
+      .create[IO](
+        source,
+        fallback,
+        rawStore,
+        obsStore,
+        ledger,
+        sink,
+        alertLedger,
+        cfg,
+        IO.pure(watchlist),
+        assembleItem,
+      )
       .unsafeRunSync()
     (run.run.unsafeRunSync(), sink, obsStore, rawStore, ledger)
   }
@@ -399,4 +423,72 @@ final class DailyRunSpec extends AnyFunSuite {
       "and the bookkeeping failure is visible",
     )
   }
+  test("one unassemblable item costs that item, not its whole flyer") {
+    // The 2026-08-26 production failure. `owned.map(assemble)` throws as a
+    // whole, the throw escaped to the flyer-level handler, and three of
+    // eighteen flyers were lost entire -- roughly 410 observations. Flyers
+    // expire, so those observations are simply gone.
+    //
+    // Driven through the seam rather than a known-bad input: the two real ones
+    // (a zero size, an oversized pack count) are both fixed now, and a test
+    // relying on either would have silently stopped testing anything.
+    val flyers = List(flyer(1L))
+    val source = new ScriptedSource(
+      flyers,
+      _ =>
+        Right(
+          List(
+            item("a", 1L, "MILK 2 L", Some(499L)),
+            item("b", 1L, "MYSTERY SNACK 0 G", Some(299L)),
+            item("c", 1L, "LAIT NATREL 1 L", Some(399L)),
+          )
+        ),
+    )
+    val (report, _, obs, _, _) = runWith(source, assembleItem = throwingOn("MYSTERY SNACK 0 G"))
+
+    assert(report.flyersFetched == 1, "the flyer must survive one bad item")
+    assert(report.flyersFailed == 0, s"the flyer must not be recorded as failed: ${report.failures}")
+    assert(obs.saved.get.unsafeRunSync().size == 2, "the other two items must still be stored")
+  }
+
+  test("an item that cannot be assembled is counted as dropped and named in the report") {
+    // Silence is the failure mode that hurt: the run report said dropped 0,
+    // decodeFailureRate 0.0 and partial false while 17% of the day was missing.
+    val flyers = List(flyer(1L))
+    val source = new ScriptedSource(
+      flyers,
+      _ => Right(List(item("a", 1L, "MILK 2 L", Some(499L)), item("b", 1L, "WIDGET 0 ML", Some(199L)))),
+    )
+    val (report, _, _, _, _) = runWith(source, assembleItem = throwingOn("WIDGET 0 ML"))
+
+    assert(report.itemsParsed == 1, s"only the assemblable item is parsed, got ${report.itemsParsed}")
+    assert(report.itemsDropped == 1, s"the bad item must be counted as dropped, got ${report.itemsDropped}")
+    assert(report.decodeFailureRate > 0.0, "a dropped item must move the rate the drift alarm watches")
+    assert(
+      report.failures.exists(_.toString.contains("WIDGET 0 ML")),
+      s"the report must name what it dropped: ${report.failures}",
+    )
+  }
+
+  test("a run that lost a flyer is partial, whatever else it reports") {
+    // partial used to be a stored flag set at ONE site -- the listing degrading
+    // -- so a run that lost three whole flyers reported partial=false.
+    val flyers = (1 to 3).map(i => flyer(i.toLong)).toList
+    val source = new ScriptedSource(
+      flyers,
+      id => if (id.value == 2L) Left(DealWatchError.Timeout("flyer/2")) else Right(Nil),
+    )
+    val (report, _, _, _, _) = runWith(source)
+
+    assert(report.flyersFailed == 1)
+    assert(report.partial, "a run that could not read every flyer has not seen everything")
+  }
+
+  test("a run that lost nothing is not partial") {
+    val flyers               = (1 to 3).map(i => flyer(i.toLong)).toList
+    val source               = new ScriptedSource(flyers, _ => Right(Nil))
+    val (report, _, _, _, _) = runWith(source)
+    assert(!report.partial, "a clean run must not cry partial, or the signal is worthless")
+  }
+
 }

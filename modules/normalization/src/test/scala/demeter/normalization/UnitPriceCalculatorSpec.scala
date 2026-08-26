@@ -135,4 +135,17 @@ final class UnitPriceCalculatorSpec extends AnyFunSuite {
     assert(err.getMessage.contains("size quantity must be positive"))
   }
 
+  test("a pack count too large for an Int is skipped, not thrown") {
+    // The same shape as the zero size, found while testing the first fix:
+    // `.toInt` threw NumberFormatException straight out of a pure parser, and
+    // before item-level containment that cost a whole flyer.
+    for (name <- List("PACK 99999999999 x 500 ml", "paquet de 99999999999", "pack of 99999999999"))
+      assert(scala.util.Try(UnitPriceCalculator.parseSize(name, Locale.EnCa)).isSuccess, s"must not throw: $name")
+  }
+
+  test("an oversized pack count does not shadow a real size in the same name") {
+    val parsed = UnitPriceCalculator.parseSize("PACK 99999999999 x 500 ml, FORMAT 2 L", Locale.EnCa)
+    assert(parsed.exists(_.quantity == BigDecimal("2.000")), s"expected 2 L, got $parsed")
+  }
+
 }

@@ -2,6 +2,8 @@ package demeter.orchestration
 
 import java.time.Instant
 
+import scala.util.Try
+
 import cats.effect.kernel.{Clock, Concurrent, Ref}
 import cats.syntax.all._
 import demeter.alerting._
@@ -44,6 +46,14 @@ final class DailyRun[F[_]](
     alertLedger: AlertLedger[F],
     alertState: Ref[F, Map[AlertKey, AlertRecord]],
     merchantNames: Ref[F, Map[MerchantId, String]],
+    /** Seam, so the containment below can be tested for ANY failing item rather
+      * than whichever input happens to throw today. Two different inputs have
+      * already had this bug -- a size that normalized to zero, and a pack count
+      * too large for an Int -- and both were fixed, which would have quietly
+      * disarmed a test that relied on either.
+      */
+    assembleItem: (FlyerItem, Instant, Locale) => PriceObservation = (i: FlyerItem, at: Instant, l: Locale) =>
+      ObservationAssembler.assemble(i, at, l),
 )(implicit F: Concurrent[F], C: Clock[F]) {
 
   def run: F[RunReport] =
@@ -95,7 +105,6 @@ final class DailyRun[F[_]](
           r.copy(
             degraded = r.degraded :+ DegradedSource(source.name, error),
             failures = r.failures :+ error,
-            partial = true,
           )
         ) *> {
           decision match {
@@ -128,20 +137,52 @@ final class DailyRun[F[_]](
                 // flyer, not the item — so resolve it here, where the flyer is
                 // authoritative. Without this the product key (02.7) would be
                 // built on merchant 0 and every product would collide.
-                val owned    = items.items.map(i => i.copy(merchantId = flyer.merchantId))
-                val observed = owned.map(ObservationAssembler.assemble(_, now, config.locale))
+                val owned = items.items.map(i => i.copy(merchantId = flyer.merchantId))
+                // Assemble each item on its own.
+                //
+                // This was `owned.map(assemble)`, and a strict map throws as a
+                // whole: on 2026-08-26 one item with an unparseable size threw
+                // out of here, was caught by the flyer-level handler below, and
+                // took its entire flyer with it -- three times over, roughly 410
+                // observations. The blast radius of a bad item must be that
+                // item. Everything else on the flyer is still good data, and
+                // flyers expire, so what is not stored today is gone.
+                val (unassembled, observed) = owned.partitionMap { i =>
+                  Try(assembleItem(i, now, config.locale)).toEither.left.map(i.rawName -> _)
+                }
                 observations.saveAll(observed, rawId).flatMap {
                   case Left(error) =>
                     report.update(r => r.copy(flyersFailed = r.flyersFailed + 1, failures = r.failures :+ error))
                   case Right(saved) =>
+                    // An item that would not assemble is DROPPED, not parsed --
+                    // counting it as parsed would leave decodeFailureRate blind
+                    // to exactly the kind of systemic breakage it exists to
+                    // catch.
+                    // One summary entry per flyer, not one per item: a flyer
+                    // that breaks on every item would otherwise bury the rest
+                    // of the report, and the count plus an example is what
+                    // makes it diagnosable.
+                    val dropped =
+                      if (unassembled.isEmpty) Nil
+                      else {
+                        val (rawName, cause) = unassembled.head
+                        List[DealWatchError](
+                          DealWatchError.Decode(
+                            source.name.value,
+                            s"flyer/${flyer.id.value}",
+                            s"${unassembled.size} item(s) would not assemble and were dropped; first: '$rawName' ($cause)",
+                          )
+                        )
+                      }
                     ledger.markFetched(flyer.id, (flyer.validFrom, flyer.validTo), rawId) *>
                       report.update(r =>
                         r.copy(
                           flyersFetched = r.flyersFetched + 1,
-                          itemsParsed = r.itemsParsed + items.items.size,
-                          itemsDropped = r.itemsDropped + items.dropped,
+                          itemsParsed = r.itemsParsed + observed.size,
+                          itemsDropped = r.itemsDropped + items.dropped + unassembled.size,
                           observationsInserted = r.observationsInserted + saved.inserted,
                           observationsSkipped = r.observationsSkipped + saved.skippedDuplicate,
+                          failures = r.failures ++ dropped,
                         )
                       )
                 }
@@ -230,6 +271,8 @@ object DailyRun {
         * want a fixed list can pass `F.pure(list)`.
         */
       watchlist: F[List[WatchItem]],
+      assembleItem: (FlyerItem, Instant, Locale) => PriceObservation = (i: FlyerItem, at: Instant, l: Locale) =>
+        ObservationAssembler.assemble(i, at, l),
   ): F[DailyRun[F]] =
     for {
       alerts    <- Ref.of[F, Map[AlertKey, AlertRecord]](Map.empty)
@@ -246,5 +289,6 @@ object DailyRun {
       alertLedger,
       alerts,
       merchants,
+      assembleItem,
     )
 }

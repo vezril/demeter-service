@@ -36,11 +36,16 @@ object UnitPriceCalculator {
 
   /** All size tokens found, ordered by position; the first wins. */
   private def sizeCandidates(name: String): List[(Int, Size)] = {
-    val multipacks = Multipack.findAllMatchIn(name).toList.map { m =>
-      val pack  = m.group(1).toInt
-      val each  = decimal(m.group(2))
-      val total = each * pack
-      m.start -> toSize(total, m.group(3), pack)
+    // `.toInt` throws on anything that does not fit, and flyer text is not
+    // obliged to be sensible -- "99999999999 x 500 ml" threw NumberFormatException
+    // out of a pure parser. Same shape as the zero size: an unusable number is
+    // not a size, so the candidate is skipped rather than raised.
+    val multipacks = Multipack.findAllMatchIn(name).toList.flatMap { m =>
+      m.group(1).toIntOption.map { pack =>
+        val each  = decimal(m.group(2))
+        val total = each * pack
+        m.start -> toSize(total, m.group(3), pack)
+      }
     }
     // exclude volume/weight matches that are part of a multipack expression
     def free(m: scala.util.matching.Regex.Match): Boolean =
@@ -50,9 +55,10 @@ object UnitPriceCalculator {
       Volume.findAllMatchIn(name).toList.filter(free).map(m => m.start -> toSize(decimal(m.group(1)), m.group(2), 1))
     val weights =
       Weight.findAllMatchIn(name).toList.filter(free).map(m => m.start -> toSize(decimal(m.group(1)), m.group(2), 1))
-    val counts = Count.findAllMatchIn(name).toList.map { m =>
-      val n = List(1, 2, 3, 4).flatMap(i => Option(m.group(i))).head.toInt
-      m.start -> Size(BigDecimal(n), StdUnit.PerItem, n)
+    val counts = Count.findAllMatchIn(name).toList.flatMap { m =>
+      List(1, 2, 3, 4).flatMap(i => Option(m.group(i))).head.toIntOption.map { n =>
+        m.start -> Size(BigDecimal(n), StdUnit.PerItem, n)
+      }
     }
     val dozens = Dozen.findAllMatchIn(name).toList.map(m => m.start -> Size(BigDecimal(12), StdUnit.PerItem, 12))
 
