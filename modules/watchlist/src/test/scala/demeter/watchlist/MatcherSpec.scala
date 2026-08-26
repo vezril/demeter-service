@@ -233,4 +233,69 @@ final class MatcherSpec extends AnyFunSuite {
   test("excluding something unrelated to the terms is fine") {
     assert(WatchItem.of(WatchId("w"), "Butter", List("butter"), excludeTerms = List("peanut")).isRight)
   }
+
+  /** The live butter watch's exclusion list, copied from production on
+    * 2026-08-26. Pinned here because the bug it defends against was found in
+    * production and cannot be reproduced on demand: "Cedar Brand Butter
+    * Cookies" alerted for real, and the product has to be back on a flyer
+    * before a run can exercise it again. Worse, it is already in alert_ledger,
+    * so dedup would suppress the re-alert and the exclusion would look like it
+    * worked whether or not it did.
+    */
+  private val liveButterExclusions = List(
+    "arachide",
+    "arachides",
+    "peanut",
+    "amande",
+    "almond",
+    "cajou",
+    "cashew",
+    "pistache",
+    "noisette",
+    "biscuit",
+    "cookie",
+    "croissant",
+    "shortbread",
+    "craquelin",
+    "chicken",
+    "deodorant",
+    "mascara",
+    "lip",
+    "peanuts",
+    "amandes",
+    "almonds",
+    "cajous",
+    "cashews",
+    "cookies",
+    "lips",
+  )
+
+  test("the live butter exclusions veto the false positive that motivated them") {
+    val butter = watch(terms = List("butter", "beurre"), exclude = liveButterExclusions)
+    assert(
+      Matcher.matchItem(butter, obs(List("Cedar Brand Butter Cookies"))).isEmpty,
+      "Cedar Brand Butter Cookies must be vetoed -- it alerted in production",
+    )
+  }
+
+  test("the plural is what does the vetoing, not the singular") {
+    // minFuzzyLength = 7 requires BOTH sides to be long enough, so `cookie` (6)
+    // cannot fuzzy-match `cookies` (7). Dropping the explicit plural silently
+    // reopens the hole, and nothing else in the suite would notice.
+    val withoutPlural = watch(
+      terms = List("butter", "beurre"),
+      exclude = liveButterExclusions.filterNot(_ == "cookies"),
+    )
+    assert(
+      Matcher.matchItem(withoutPlural, obs(List("Cedar Brand Butter Cookies"))).isDefined,
+      "without the explicit plural this SHOULD match -- if it does not, the singular now covers it and this pair of tests is obsolete",
+    )
+  }
+
+  test("the exclusions do not veto the butter the watch is actually for") {
+    val butter = watch(terms = List("butter", "beurre"), exclude = liveButterExclusions)
+    for (name <- List("BEURRE LACTANTIA, 454 G | LACTANTIA BUTTER", "Great Value butter", "BEURRE PRESIDENT"))
+      assert(Matcher.matchItem(butter, obs(List(name))).isDefined, s"must still match: $name")
+  }
+
 }

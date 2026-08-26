@@ -125,4 +125,17 @@ final class ObservationAssemblerSpec extends AnyFunSuite {
     assert(obs1.validFrom == from)
     assert(obs1.validTo == to)
   }
+  test("an item whose size normalizes to zero still assembles") {
+    // This is the whole point of the fix. assemble() throwing did not lose one
+    // ITEM -- the throw escaped to the flyer, and on 2026-08-26 three flyers
+    // were lost entire, roughly 410 observations, one bad item each. The name
+    // and the price are what make an observation worth storing; the size is
+    // optional and already modelled as such.
+    val obs = assemble(item(rawName = "MYSTERY SNACK 0 G", current = Some(499L)))
+    assert(obs.effectivePrice.contains(Money.cents(499L)))
+    assert(obs.size.isEmpty, "a zero size must not be recorded as a size")
+    assert(obs.unitPrice.isEmpty, "no size means no unit price")
+    assert(obs.rawName == "MYSTERY SNACK 0 G", "the raw name stays verbatim as the audit trail")
+  }
+
 }

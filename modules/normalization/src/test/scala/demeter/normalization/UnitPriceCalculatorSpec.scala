@@ -110,4 +110,29 @@ final class UnitPriceCalculatorSpec extends AnyFunSuite {
     val Some(single) = UnitPriceCalculator.parseSizeDetailed("Natrel Milk 4 L", Locale.EnCa)
     assert(!single.ambiguous)
   }
+  test("a size that normalizes to zero is no size, not a thrown exception") {
+    // The production failure: three flyers were lost whole on 2026-08-26 to one
+    // item each, because round3 sent a sub-gram weight to 0.000 and unitPrice's
+    // `require` threw all the way up to the flyer.
+    for (name <- List("PATTES 0 G", "SACHET 0,4 G", "BOISSON 0 ML", "TRUC 0.25 G"))
+      assert(UnitPriceCalculator.parseSize(name, Locale.FrCa).isEmpty, s"must not yield a zero size: $name")
+  }
+
+  test("a zero size does not hide a real one later in the name") {
+    // Discarding the candidate must not discard the item's actual size: the
+    // first VALID candidate should still win.
+    val parsed = UnitPriceCalculator.parseSize("PATTES 0 G, FORMAT 500 G", Locale.FrCa)
+    assert(parsed.exists(_.quantity == BigDecimal("0.500")), s"expected 0.500 kg, got $parsed")
+  }
+
+  test("unitPrice still rejects a zero size, because reaching it is a bug") {
+    // The guard stays. It is now unreachable from parsing, and if it ever fires
+    // again that is a programming error worth the exception -- but it must not
+    // be how ordinary flyer data is handled.
+    val err = intercept[IllegalArgumentException](
+      UnitPriceCalculator.unitPrice(Money.cents(499), Size(BigDecimal(0), StdUnit.PerKg, 1))
+    )
+    assert(err.getMessage.contains("size quantity must be positive"))
+  }
+
 }
