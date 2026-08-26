@@ -6,7 +6,9 @@ import cats.effect.IO
 import cats.effect.unsafe.implicits.global
 import io.circe.Json
 import io.circe.parser.parse
+import io.circe.syntax._
 import org.http4s._
+import org.http4s.circe._
 import org.http4s.implicits._
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -47,7 +49,8 @@ final class RoutesSpec extends AnyFunSuite {
       queries: RunQueries[IO],
       hist: HistoryQueries[IO] = emptyHistory,
       w: WatchQueries[IO] = noWatches,
-  ) = new Routes[IO](queries, hist, w).routes.orNotFound
+      writes: Option[WatchWrites[IO]] = None,
+  ) = new Routes[IO](queries, hist, w, writes).routes.orNotFound
 
   private def stub(result: IO[Option[RunView]], up: Boolean = true): RunQueries[IO] = new RunQueries[IO] {
     def latest: IO[Option[RunView]] = result
@@ -263,15 +266,91 @@ final class RoutesSpec extends AnyFunSuite {
     assert(get(stub(IO.pure(None)), "/v1/alerts", w = failing).status == Status.ServiceUnavailable)
   }
 
-  test("every route is a GET") {
-    // A design constraint, not a description of today: a write path drags in
-    // authentication this tool deliberately does not have.
+  // --- write surface ---
+
+  /** Named rather than anonymous: an inline class with an extra field infers a
+    * structural type, which -Xsource:3 rejects.
+    */
+  private final class RecordingWrites(result: Either[String, Unit] = Right(())) extends WatchWrites[IO] {
+    var saved: Option[WatchRequest]                                    = None
+    def save(r: WatchRequest): IO[Either[String, Unit]]                = { saved = Some(r); IO.pure(result) }
+    def setActive(id: String, a: Boolean): IO[Either[String, Boolean]] = IO.pure(Right(true))
+    def delete(id: String): IO[Either[String, Boolean]]                = IO.pure(Right(true))
+  }
+
+  private def recordingWrites(result: Either[String, Unit] = Right(())): RecordingWrites =
+    new RecordingWrites(result)
+
+  test("with writes disabled the service is exactly as read-only as before") {
+    // Not "mounted but refusing": the routes do not exist. A deployment without
+    // the write role cannot be talked into a write by any request.
     val methods = List(Method.POST, Method.PUT, Method.PATCH, Method.DELETE)
     for (m <- methods) {
-      val response = app(stub(IO.pure(Some(sample))))
+      val onRuns = app(stub(IO.pure(Some(sample))))
         .run(Request[IO](m, uri"/v1/runs/latest"))
         .unsafeRunSync()
-      assert(response.status == Status.NotFound, s"$m must not be routed")
+      assert(onRuns.status == Status.NotFound, s"$m on a read route must not be routed")
     }
+    val post = app(stub(IO.pure(None)))
+      .run(Request[IO](Method.POST, uri"/v1/watches"))
+      .unsafeRunSync()
+    assert(post.status == Status.NotFound, "POST /v1/watches must not exist when writes are off")
+  }
+
+  test("the read endpoints stay GET-only even with writes enabled") {
+    val w = recordingWrites()
+    for (m <- List(Method.POST, Method.PUT, Method.DELETE)) {
+      val r = app(stub(IO.pure(Some(sample))), writes = Some(w))
+        .run(Request[IO](m, uri"/v1/runs/latest"))
+        .unsafeRunSync()
+      assert(r.status == Status.NotFound, s"$m on /v1/runs/latest must not be routed")
+    }
+  }
+
+  test("a valid watch is created") {
+    val w = recordingWrites()
+    val body = Json.obj(
+      "id"            -> "coffee".asJson,
+      "label"         -> "Coffee".asJson,
+      "terms"         -> List("coffee", "cafe").asJson,
+      "maxPriceCents" -> 1200.asJson,
+    )
+    val r = app(stub(IO.pure(None)), writes = Some(w))
+      .run(Request[IO](Method.POST, uri"/v1/watches").withEntity(body))
+      .unsafeRunSync()
+    assert(r.status == Status.Created)
+    assert(w.saved.exists(_.terms == List("coffee", "cafe")))
+  }
+
+  test("a watch the DOMAIN rejects is 422, and says which rule it broke") {
+    // 422 not 400: the JSON parsed fine, the watch is the problem. Accepting it
+    // would produce a watch the daily run silently drops at load.
+    val w    = recordingWrites(Left("a watch needs at least one term to match on"))
+    val body = Json.obj("id" -> "x".asJson, "label" -> "X".asJson, "terms" -> List.empty[String].asJson)
+    val r = app(stub(IO.pure(None)), writes = Some(w))
+      .run(Request[IO](Method.POST, uri"/v1/watches").withEntity(body))
+      .unsafeRunSync()
+    assert(r.status == Status.UnprocessableEntity)
+    assert(bodyJson(r).hcursor.get[String]("error").exists(_.contains("at least one term")))
+  }
+
+  test("unparseable JSON is 400, which is a different failure from an invalid watch") {
+    val w = recordingWrites()
+    val r = app(stub(IO.pure(None)), writes = Some(w))
+      .run(Request[IO](Method.POST, uri"/v1/watches").withEntity(Json.obj("nope" -> 1.asJson)))
+      .unsafeRunSync()
+    assert(r.status == Status.BadRequest)
+  }
+
+  test("deleting a watch that is not there is 404, not silent success") {
+    val w = new WatchWrites[IO] {
+      def save(r: WatchRequest): IO[Either[String, Unit]]                = IO.pure(Right(()))
+      def setActive(id: String, a: Boolean): IO[Either[String, Boolean]] = IO.pure(Right(false))
+      def delete(id: String): IO[Either[String, Boolean]]                = IO.pure(Right(false))
+    }
+    val del = app(stub(IO.pure(None)), writes = Some(w))
+      .run(Request[IO](Method.DELETE, uri"/v1/watches/ghost"))
+      .unsafeRunSync()
+    assert(del.status == Status.NotFound)
   }
 }

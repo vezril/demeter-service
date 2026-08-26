@@ -31,6 +31,24 @@ final class ConfigSpec extends AnyFunSuite {
     assert(Config.from(valid + ("DEMETER_INSIGHT_PORT" -> "9090")).isRight)
   }
 
+  test("watch editing is off unless a write password is supplied") {
+    // The safe default: without it the write routes are never mounted, so a
+    // deployment that forgot the role is read-only rather than broken.
+    val Right(off) = Config.from(valid)
+    assert(off.watchPassword.isEmpty)
+    assert(off.redactedDump.contains("read-only"))
+
+    val Right(on) = Config.from(valid + ("DEMETER_WATCH_PASSWORD" -> "s3cret"))
+    assert(on.watchPassword.isDefined)
+    assert(on.redactedDump.contains("enabled"))
+  }
+
+  test("neither password appears in the dump") {
+    val Right(c) = Config.from(valid ++ Map("DEMETER_DB_PASSWORD" -> "hunter2", "DEMETER_WATCH_PASSWORD" -> "hunter3"))
+    assert(!c.redactedDump.contains("hunter2"))
+    assert(!c.redactedDump.contains("hunter3"))
+  }
+
   test("the password never appears in the dump") {
     val Right(config) = Config.from(valid + ("DEMETER_DB_PASSWORD" -> "hunter2"))
     assert(!config.redactedDump.contains("hunter2"))

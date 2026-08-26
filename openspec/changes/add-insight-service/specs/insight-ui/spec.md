@@ -36,9 +36,25 @@ The UI SHALL show, per watch, what it matched and why those matches did not aler
 - **WHEN** a watch matches many unwanted items
 - **THEN** the view shows the matched item names, so exclusion terms can be chosen by reading rather than by grepping logs
 
-### Requirement: Read-only by construction
-The UI SHALL offer no control that changes state — no editing watches, no acknowledging alerts, no triggering runs.
+### Requirement: Writes are limited to the watchlist
+The UI MAY create, pause and delete watches. It SHALL NOT offer any other
+mutation — no acknowledging alerts, no triggering runs, no editing observations.
 
-#### Scenario: No mutating affordance is presented
+This reverses the original "no writes" decision, which predicted this exact
+request ("just let me pause a watch from here") and pre-answered it. What does
+NOT reverse is the reason: the price history cannot be rebuilt, because flyers
+expire. The watchlist can — it is typed in, and worth what it costs to retype.
+So the write path holds a role granted INSERT/UPDATE/DELETE on `watch_item`
+alone, and the read path keeps a connection that cannot write at all.
+
+#### Scenario: The irreplaceable data stays unwritable
+- **WHEN** the watch-editing role attempts to write price_observation, raw_response or alert_ledger
+- **THEN** PostgreSQL refuses it, because those grants were never made
+
+#### Scenario: No other mutating affordance is presented
 - **WHEN** any view is rendered
-- **THEN** it contains no control that would issue a write, because a write path drags in authentication this tool deliberately does not have
+- **THEN** the only controls that write are the watch ones
+
+#### Scenario: A deployment without the write role is read-only
+- **WHEN** no watch password is configured
+- **THEN** the write routes are not mounted at all, rather than mounted and refusing

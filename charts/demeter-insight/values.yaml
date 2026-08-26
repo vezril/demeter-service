@@ -31,6 +31,14 @@ database:
   user: "demeter_read"
   password: ""
 
+  # Set this to enable watch editing from the UI. It is the password for the
+  # demeter_watch role, which can write watch_item and NOTHING else -- the price
+  # history stays unwritable, because it cannot be re-fetched once flyers expire.
+  #
+  # Left empty, the write routes are not mounted at all: the service is then
+  # exactly as read-only as it was before, rather than mounted-but-refusing.
+  watchPassword: ""
+
 ingress:
   enabled: false
   # DELIBERATELY EMPTY, and omitted from the manifest when empty. The target

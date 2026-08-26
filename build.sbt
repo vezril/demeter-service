@@ -106,7 +106,12 @@ lazy val insight = (project in file("modules/insight"))
   // swapping two same-typed columns -- a wrong price that still parses. The
   // stats are reused for the stated reason: one implementation cannot drift
   // from another, and the UI must quote the same median an alert does.
-  .dependsOn(foundations, persistence, pricehistory)
+  // watchlist too, once the UI could edit watches: WatchItem.of holds the
+  // validation (a watch with no terms, a term that is also excluded, an
+  // out-of-range discount) and DoobieWatchStore holds the writes. Re-expressing
+  // either in this module would let the UI accept a watch the daily job then
+  // refuses to load.
+  .dependsOn(foundations, persistence, pricehistory, watchlist)
 
 lazy val orchestration = (project in file("modules/orchestration"))
   .settings(name := "demeter-orchestration")
