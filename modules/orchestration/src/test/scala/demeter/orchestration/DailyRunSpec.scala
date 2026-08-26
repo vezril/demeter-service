@@ -100,7 +100,7 @@ final class DailyRunSpec extends AnyFunSuite {
       alertLedger: MemAlertLedger = MemAlertLedger.create(),
   ): (RunReport, MemSink, MemObservationStore, MemRawStore, MemLedger) = {
     val run = DailyRun
-      .create[IO](source, fallback, rawStore, obsStore, ledger, sink, alertLedger, cfg, watchlist)
+      .create[IO](source, fallback, rawStore, obsStore, ledger, sink, alertLedger, cfg, IO.pure(watchlist))
       .unsafeRunSync()
     (run.run.unsafeRunSync(), sink, obsStore, rawStore, ledger)
   }
@@ -172,6 +172,32 @@ final class DailyRunSpec extends AnyFunSuite {
     assert(!Observability.alarms(report, SourceName("flipp")).exists(_.isInstanceOf[DriftAlarm.NoAudience]))
   }
 
+  test("the watchlist is re-read on every run, not fixed at construction") {
+    // Loading once at construction meant a watch added or paused did nothing
+    // until someone restarted the pod. Survivable when the only way to edit the
+    // list was psql; untenable now that a UI exists whose purpose is editing it.
+    val loads = Ref.of[IO, Int](0).unsafeRunSync()
+    val run = DailyRun
+      .create[IO](
+        new ScriptedSource(Nil, _ => Right(Nil)),
+        None,
+        MemRawStore.create(),
+        MemObservationStore.create(),
+        MemLedger.create(),
+        MemSink.create(),
+        MemAlertLedger.create(),
+        config,
+        loads.update(_ + 1).as(List(milkWatch)),
+      )
+      .unsafeRunSync()
+
+    val _ = assert(loads.get.unsafeRunSync() == 0, "constructing must not read it")
+    run.run.unsafeRunSync()
+    val _ = assert(loads.get.unsafeRunSync() == 1)
+    run.run.unsafeRunSync()
+    assert(loads.get.unsafeRunSync() == 2, "a second run must see a second read")
+  }
+
   test("the run is idempotent within a day: no duplicate observations, no duplicate alerts") {
     val flyers   = List(flyer(1))
     val items    = List(item("i1", 1L, "Natrel Milk 4 L", Some(499L)))
@@ -182,7 +208,17 @@ final class DailyRunSpec extends AnyFunSuite {
 
     val source = new ScriptedSource(flyers, _ => Right(items))
     val run = DailyRun
-      .create[IO](source, None, rawStore, obsStore, ledger, sink, MemAlertLedger.create(), config, List(milkWatch))
+      .create[IO](
+        source,
+        None,
+        rawStore,
+        obsStore,
+        ledger,
+        sink,
+        MemAlertLedger.create(),
+        config,
+        IO.pure(List(milkWatch)),
+      )
       .unsafeRunSync()
 
     val first  = run.run.unsafeRunSync()
@@ -272,7 +308,17 @@ final class DailyRunSpec extends AnyFunSuite {
     def freshProcess(sink: MemSink) = {
       val source = new ScriptedSource(flyers, _ => Right(items))
       DailyRun
-        .create[IO](source, None, MemRawStore.create(), obsStore, memLedger, sink, alertLedger, config, List(milkWatch))
+        .create[IO](
+          source,
+          None,
+          MemRawStore.create(),
+          obsStore,
+          memLedger,
+          sink,
+          alertLedger,
+          config,
+          IO.pure(List(milkWatch)),
+        )
         .unsafeRunSync()
     }
 
@@ -303,7 +349,7 @@ final class DailyRunSpec extends AnyFunSuite {
           sink,
           alertLedger,
           config,
-          List(milkWatch),
+          IO.pure(List(milkWatch)),
         )
         .unsafeRunSync()
     }
@@ -341,7 +387,7 @@ final class DailyRunSpec extends AnyFunSuite {
         sink,
         failing,
         config,
-        List(milkWatch),
+        IO.pure(List(milkWatch)),
       )
       .unsafeRunSync()
 

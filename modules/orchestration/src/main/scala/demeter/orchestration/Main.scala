@@ -34,9 +34,21 @@ object Main extends IOApp {
             components(config).use {
               case (source, rawStore, observations, ledger, sink, watches, alertLedger, reports) =>
                 for {
-                  watchlist <- loadWatchlist(watches, log)
-                  run <- DailyRun
-                    .create[IO](source, None, rawStore, observations, ledger, sink, alertLedger, config, watchlist)
+                  // Logged once at boot so a misconfiguration is visible
+                  // immediately, then re-read before every run so an edit made
+                  // through the UI takes effect without a restart.
+                  _ <- loadWatchlist(watches, log)
+                  run <- DailyRun.create[IO](
+                    source,
+                    None,
+                    rawStore,
+                    observations,
+                    ledger,
+                    sink,
+                    alertLedger,
+                    config,
+                    loadWatchlist(watches, log),
+                  )
                   _ <- IO.whenA(config.schedule.runOnStart)(executeOnce(run, log, reports).void)
                   // validated at boot, so this cannot fail here
                   schedule = DailySchedule

@@ -25,10 +25,25 @@ object Main extends IOApp {
         case Right(config) =>
           log.info(s"starting demeter-insight\n${config.redactedDump}") *>
             transactor(config).use { xa =>
+              // A SECOND transactor for writes, as a different role. The read
+              // path keeps a connection that cannot write at all, so a bug in
+              // the write path cannot reach through it.
+              val writes = config.watchPassword.map { pw =>
+                new DbWatchWrites[IO](
+                  Transactor.fromDriverManager[IO](
+                    "org.postgresql.Driver",
+                    config.jdbcUrl,
+                    "demeter_watch",
+                    pw,
+                    None,
+                  )
+                ): WatchWrites[IO]
+              }
               val routes = new Routes[IO](
                 new DoobieRunQueries[IO](xa),
                 new DbHistoryQueries[IO](xa),
                 new DbWatchQueries[IO](xa),
+                writes,
               ).routes
               EmberServerBuilder
                 .default[IO]

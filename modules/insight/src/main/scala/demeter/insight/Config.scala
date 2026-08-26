@@ -13,6 +13,11 @@ final case class Config(
     user: String,
     password: String,
     port: Int,
+    /** When set, watch editing is enabled and this is the password for the
+      * demeter_watch role. Absent means the write routes are not mounted at
+      * all -- the service is then exactly as read-only as it was before.
+      */
+    watchPassword: Option[String],
 ) {
   def redactedDump: String =
     List(
@@ -20,6 +25,7 @@ final case class Config(
       s"user=$user",
       s"password=${if (password.isEmpty) "unset" else "***REDACTED***"}",
       s"port=$port",
+      s"watchEditing=${if (watchPassword.isDefined) "enabled" else "disabled (read-only)"}",
     ).mkString("\n")
 }
 
@@ -52,6 +58,7 @@ object Config {
           user = user.get,
           password = env.getOrElse("DEMETER_DB_PASSWORD", ""),
           port = portValue.getOrElse(8080),
+          watchPassword = env.get("DEMETER_WATCH_PASSWORD").filter(_.trim.nonEmpty),
         )
       )
   }

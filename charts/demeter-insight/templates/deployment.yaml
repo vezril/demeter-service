@@ -34,6 +34,13 @@ spec:
               value: {{ .Values.port | quote }}
             - name: JAVA_OPTS
               value: {{ .Values.javaOpts | quote }}
+            {{- if .Values.database.watchPassword }}
+            - name: DEMETER_WATCH_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "insight.fullname" . }}
+                  key: DEMETER_WATCH_PASSWORD
+            {{- end }}
           envFrom:
             - secretRef:
                 name: {{ include "insight.fullname" . }}

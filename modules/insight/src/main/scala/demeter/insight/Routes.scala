@@ -22,9 +22,16 @@ final class Routes[F[_]: Concurrent](
     runs: RunQueries[F],
     history: HistoryQueries[F],
     watches: WatchQueries[F],
+    /** Present only when watch editing is enabled. `None` keeps this service
+      * exactly as read-only as it was before -- the write routes do not exist
+      * at all rather than existing and refusing, so a deployment without the
+      * write role cannot be talked into a write.
+      */
+    writes: Option[WatchWrites[F]] = None,
 ) extends Http4sDsl[F] {
 
-  private object Limit extends OptionalQueryParamDecoderMatcher[Int]("limit")
+  private object Limit       extends OptionalQueryParamDecoderMatcher[Int]("limit")
+  private object ActiveParam extends OptionalQueryParamDecoderMatcher[Boolean]("active")
 
   /** Window in days, defaulted to the 8 weeks the deal verdict itself uses so
     * the chart and the alerts are talking about the same period. Clamped rather
@@ -81,6 +88,43 @@ final class Routes[F[_]: Concurrent](
           case Right(view) => Ok(view.asJson)
           case Left(_)     => ServiceUnavailable(Map("error" -> "database unavailable").asJson)
         }
+
+    // --- watch editing (only mounted when `writes` is configured) ---
+    //
+    // This is the one part of the service that is not a GET. It reverses the
+    // original "no writes" decision, but not the reason for it: the connection
+    // behind these routes belongs to a role that can write watch_item and
+    // nothing else. A watchlist can be retyped; the price history cannot,
+    // because flyers expire.
+
+    case req @ POST -> Root / "v1" / "watches" if writes.isDefined =>
+      req.as[WatchRequest](Concurrent[F], jsonOf[F, WatchRequest]).attempt.flatMap {
+        case Left(_) => BadRequest(Map("error" -> "could not parse the watch").asJson)
+        case Right(request) =>
+          writes.get.save(request).attempt.flatMap {
+            case Right(Right(_)) => Created(Map("id" -> request.id).asJson)
+            // A domain rejection is 422, not 400: the JSON was fine, the WATCH
+            // was not, and the message says which rule it broke.
+            case Right(Left(reason)) => UnprocessableEntity(Map("error" -> reason).asJson)
+            case Left(_)             => ServiceUnavailable(Map("error" -> "database unavailable").asJson)
+          }
+      }
+
+    case PATCH -> Root / "v1" / "watches" / id / "active" :? ActiveParam(active) if writes.isDefined =>
+      writes.get.setActive(id, active.getOrElse(true)).attempt.flatMap {
+        case Right(Right(true))  => NoContent()
+        case Right(Right(false)) => NotFound(Map("error" -> s"no watch '$id'").asJson)
+        case Right(Left(reason)) => UnprocessableEntity(Map("error" -> reason).asJson)
+        case Left(_)             => ServiceUnavailable(Map("error" -> "database unavailable").asJson)
+      }
+
+    case DELETE -> Root / "v1" / "watches" / id if writes.isDefined =>
+      writes.get.delete(id).attempt.flatMap {
+        case Right(Right(true))  => NoContent()
+        case Right(Right(false)) => NotFound(Map("error" -> s"no watch '$id'").asJson)
+        case Right(Left(reason)) => UnprocessableEntity(Map("error" -> reason).asJson)
+        case Left(_)             => ServiceUnavailable(Map("error" -> "database unavailable").asJson)
+      }
 
     case GET -> Root / "v1" / "watches" =>
       watches.watches.attempt.flatMap {

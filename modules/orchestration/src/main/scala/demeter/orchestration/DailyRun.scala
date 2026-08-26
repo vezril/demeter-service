@@ -32,7 +32,15 @@ final class DailyRun[F[_]](
     ledger: FlyerLedger[F],
     sink: AlertSink[F],
     config: Config,
-    watchlist: List[WatchItem],
+    /** Loaded at the START OF EACH RUN, not once at boot.
+      *
+      * Held as an effect rather than a list so a watch added or paused between
+      * runs takes effect on the next one. Loading once at construction meant a
+      * change to the watchlist did nothing until someone restarted the pod --
+      * survivable while the only way to edit it was psql, and untenable now that
+      * there is a UI whose whole purpose is editing it.
+      */
+    watchlist: F[List[WatchItem]],
     alertLedger: AlertLedger[F],
     alertState: Ref[F, Map[AlertKey, AlertRecord]],
     merchantNames: Ref[F, Map[MerchantId, String]],
@@ -152,12 +160,9 @@ final class DailyRun[F[_]](
 
   /** Steps 4-6 — match what's active now, score it, decide, dedup, deliver. */
   private def matchAndAlert(now: Instant, report: Ref[F, RunReport]): F[Unit] =
-    observations
-      .currentObservations(now)
-      .compile
-      .toList
-      .flatMap { active =>
-        val grouped = watchlist.filter(_.active).map { watch =>
+    (observations.currentObservations(now).compile.toList, watchlist).tupled
+      .flatMap { case (active, watches) =>
+        val grouped = watches.filter(_.active).map { watch =>
           val hits = active.flatMap(o => Matcher.matchItem(watch, o).map(o -> _))
           watch -> MatchScore.scoreGroup(watch, hits, config.scoring)
         }
@@ -221,7 +226,10 @@ object DailyRun {
       sink: AlertSink[F],
       alertLedger: AlertLedger[F],
       config: Config,
-      watchlist: List[WatchItem],
+      /** An effect, re-evaluated each run — see the field's comment. Tests that
+        * want a fixed list can pass `F.pure(list)`.
+        */
+      watchlist: F[List[WatchItem]],
   ): F[DailyRun[F]] =
     for {
       alerts    <- Ref.of[F, Map[AlertKey, AlertRecord]](Map.empty)
