@@ -1,6 +1,7 @@
 package demeter.orchestration
 
 import java.time.Instant
+import java.time.temporal.ChronoUnit
 
 import scala.concurrent.duration._
 
@@ -22,8 +23,22 @@ import InMemory._
 final class DailyRunSpec extends AnyFunSuite {
 
   private val postal = PostalCode.parse("H2X1Y6").toOption.get
-  private val from   = Instant.parse("2026-07-23T00:00:00Z")
-  private val to     = Instant.parse("2026-08-30T00:00:00Z")
+
+  // Anchored to the clock the code under test actually reads.
+  //
+  // DailyRun takes Clock[F] and calls C.realTime, and matchAndAlert only
+  // considers observations whose validity window contains that instant. A
+  // hardcoded window is therefore a time bomb: `to` was 2026-08-30T00:00:00Z,
+  // chosen five weeks out when the pipeline was built, and at midnight on
+  // 2026-08-30 it stopped containing "now". Five tests began failing at once --
+  // every one of them an alerting assertion, because no observation was current
+  // any more -- and main went red on a docs-only PR.
+  //
+  // Pushing the date further out would only reset the timer. What these tests
+  // need is "a flyer that is valid right now", so that is what the fixture says.
+  private val now  = Instant.now()
+  private val from = now.minus(2, ChronoUnit.DAYS)
+  private val to   = now.plus(5, ChronoUnit.DAYS)
 
   private val config = Config(
     postalCode = postal,
