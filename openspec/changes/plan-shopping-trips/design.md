@@ -89,6 +89,16 @@ If this ever grates there is a credential-free answer that needs no Apple involv
 
 ## Risks / Trade-offs
 
+**R0. "Store" means chain today and will not later.** Recorded 2026-08-26 from the Ariadne session.
+
+Demeter's `merchant_id` is a chain — Metro, IGA — so grouping by merchant is unambiguous as written. Ariadne's model anchors a Store to an individual **franchise**, with chain as a rollup attribute, and a flyer price is therefore recorded as `Regional(chainId, area)`: one fact covering a set of franchises, not fanned onto members at write time.
+
+Every franchise of one chain in one region shares a single flyer, so their prices are identical **by construction**. A trip view keyed on franchise after that migration would render eight identical Metros and present a modelling artefact as a choice.
+
+So this change's grouping dimension is the **chain**, for as long as its inputs are flyer-derived. The franchise becomes meaningful only when a price is franchise-exact, and the only source that will ever be is a receipt — franchise-level sales are invisible to Flipp.
+
+Nothing to do now; the requirement below is correct against today's data. Written down because the ambiguity appears at migration, months after the reasoning would otherwise have been forgotten, and it fails by looking like a longer list rather than by erroring.
+
 **R1. Retention.** Match results are per run per watch per matching observation — 270 rows for 2026-08-26 with three watches, and it scales with the watchlist. It needs a retention policy written at the same time as the table, not bolted on once the table is large. Note the asymmetry with `price_observation`: observations are irreplaceable because flyers expire, but match results are *derived* and could in principle be recomputed, so they are the cheaper thing to expire.
 
 **R2. A stale trip.** The view shows the last run's decisions, which may be hours old and, late in a flyer week, may include deals that have since ended. Every row must carry the run it came from and the deal's `validTo`, so a trip planned on Wednesday evening cannot silently present Tuesday morning's world as current.

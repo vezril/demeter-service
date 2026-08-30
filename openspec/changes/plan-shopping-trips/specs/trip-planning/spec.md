@@ -26,6 +26,12 @@ The trip view SHALL group qualifying deals by merchant, and SHALL report per mer
 
 Grouping by store is the purpose rather than a presentation choice: a trip visits one or two shops, so the question being answered is which.
 
+"Merchant" here means the **chain**. Today that is what `merchant_id` is, so the requirement is unambiguous as written; after the Ariadne migration a Store is an individual franchise and a flyer price is a `Regional(chain, area)` fact, at which point grouping SHALL remain at the chain for flyer-derived facts. Franchises of one chain in one region share a flyer, so their prices are identical by construction, and grouping below the chain would present a modelling artefact as a choice between shops.
+
+#### Scenario: Grouping does not descend below the chain for flyer-derived facts
+- **WHEN** several franchises of one chain in one region carry the same flyer price
+- **THEN** they appear as one row, not one row per franchise
+
 #### Scenario: Stores are comparable at a glance
 - **WHEN** a run has qualifying deals at three merchants
 - **THEN** the view lists exactly those three, each with its item count
