@@ -8,7 +8,7 @@ object Dependencies {
 
   object V {
     val cats          = "2.13.0"
-    val catsEffect    = "3.5.4"
+    val catsEffect    = "3.7.1"
     val http4s        = "0.23.27"
     val circe         = "0.14.9"
     val doobie        = "1.0.0-RC5"
@@ -18,7 +18,7 @@ object Dependencies {
     val paho          = "1.2.5"
     val scalaTest     = "3.2.20"
     val scalaTestPlus = "3.2.19.0"
-    val scalaCheck    = "1.19.0"
+    val scalaCheck    = "1.20.0"
   }
 
   // --- core ---
