@@ -14,7 +14,7 @@ object Dependencies {
     val doobie        = "1.0.0-RC5"
     val pureconfig    = "0.17.10"
     val log4cats      = "2.8.0"
-    val logback       = "1.6.3"
+    val logback       = "1.6.4"
     val paho          = "1.2.5"
     val scalaTest     = "3.2.20"
     val scalaTestPlus = "3.2.19.0"
