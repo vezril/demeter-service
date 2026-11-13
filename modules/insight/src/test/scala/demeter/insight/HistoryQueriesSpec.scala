@@ -16,7 +16,20 @@ final class HistoryQueriesSpec extends AnyFunSuite {
 
   private val key      = ProductKey("iga|test-milk-4l")
   private val merchant = MerchantId(4001)
-  private val now      = Instant.parse("2026-08-25T12:00:00Z")
+
+  // Anchored to the clock the code under test actually reads -- the same bomb
+  // DailyRunSpec was defused of, in the one spec written after that fix.
+  //
+  // DbHistoryQueries takes Clock[F] and calls realTime, then asks the store for
+  // observations no older than `now - window`. The fixture dated itself
+  // 2026-08-25 and seeded rows 2 to 30 days before that, which an 8-week window
+  // contained until 2026-10-20 and has contained nothing since: the series came
+  // back empty, so the points, the stats and the verdict all went with it.
+  //
+  // Dating the fixture further out would only move the expiry. What these tests
+  // need is a product observed over the last month, so the fixture says that and
+  // measures the window against the same clock the query does.
+  private val now = Instant.now()
 
   private def observation(daysAgo: Long, cents: Long, confidence: Confidence = Confidence.High) =
     PriceObservation(
